@@ -176,8 +176,11 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, context: `Maria Eduarda está no nível de ${currentExercise?.category}` })
       });
+      
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      
       const data = await res.json();
-      setAiResponse(data.response);
+      setAiResponse(data?.response || "Desculpe, Maria, tive um probleminha para pensar agora. Mas você consegue!");
       playEffect(SOUNDS.HINT);
     } catch (error) {
       console.error("AI Error:", error);
@@ -224,7 +227,7 @@ export default function App() {
     if (category === 'review') {
       const wrongIds = profile?.wrongExerciseIds || [];
       if (wrongIds.length === 0) {
-        alert("Nenhum exercício para reforço no momento! Bom trabalho!");
+        console.warn("Nenhum exercício para reforço no momento!");
         return;
       }
       
