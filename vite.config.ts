@@ -8,9 +8,6 @@ export default defineConfig(({mode}) => {
   return {
     base: '/Escola-Maria/',
     plugins: [react(), tailwindcss()],
-    build: {
-      outDir: 'docs',
-    },
     resolve: {
       alias: {
         '@': path.resolve(process.cwd(), '.'),

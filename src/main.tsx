@@ -5,11 +5,15 @@ import './index.css';
 
 // Global error handling to suppress noisy extension errors and logs
 window.addEventListener('error', (event) => {
-  // Ignorar erros de extensões do Chrome ou outros scripts externos que não do app
+  // Ignorar erros de extensões ou scripts externos conhecidos por dar problema
+  const errorMessage = event.message || "";
+  const fileName = event.filename || "";
+
   const isExtensionError = 
-    event.filename?.includes('extension') || 
-    event.filename?.includes('content.js') ||
-    event.message?.includes("reading 'query'");
+    fileName.includes('extension') || 
+    fileName.includes('content.js') ||
+    errorMessage.includes("reading 'query'") ||
+    errorMessage.includes("Cannot read properties of undefined");
 
   if (isExtensionError) {
     event.stopImmediatePropagation();
