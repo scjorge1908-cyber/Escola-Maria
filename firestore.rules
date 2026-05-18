@@ -23,17 +23,15 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser(request.resource.data);
-      allow update: if isOwner(userId) && isValidUser(request.resource.data) && (
-        // Prevent points/levels cheating? Maybe just allow it for now for simplicity of this educational app
-        request.resource.data.diff(resource.data).affectedKeys().hasAny(['points', 'levels', 'unlockedRewards'])
-      );
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
 
       function isValidUser(data) {
         return data.keys().hasAll(['name', 'points', 'levels']) &&
                data.name is string && data.name.size() <= 100 &&
                data.points is number &&
                data.levels is map &&
-               (!data.keys().contains('unlockedRewards') || data.unlockedRewards is list);
+               (!data.keys().contains('unlockedRewards') || data.unlockedRewards is list) &&
+               (!data.keys().contains('wrongExerciseIds') || data.wrongExerciseIds is list);
       }
     }
 
@@ -46,20 +44,8 @@ service cloud.firestore {
 
     // --- Progress Collection ---
     match /progress/{progressId} {
-      // 8. Secure List Queries
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
-      
-      allow create: if isSignedIn() && 
-                    request.resource.data.userId == request.auth.uid && 
-                    isValidProgress(request.resource.data);
-
-      function isValidProgress(data) {
-        return data.keys().hasAll(['userId', 'exerciseId', 'completed', 'timestamp']) &&
-               data.userId == request.auth.uid &&
-               data.exerciseId is string &&
-               data.completed is bool;
-      }
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
     }
   }
 }
