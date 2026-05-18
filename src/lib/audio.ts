@@ -5,9 +5,9 @@ export const playSound = (url: string) => {
 };
 
 export const SOUNDS = {
-  SUCCESS: "https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3", // Success chime
-  HINT: "https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3",    // Soft bubble/ping
-  ERROR: "https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3",   // Gentle error/thud
-  CLICK: "https://assets.mixkit.co/active_storage/sfx/2567/2567-preview.mp3",   // Soft click
-  TROPHY: "https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3"  // Fanfare for summary
+  SUCCESS: "https://cdn.pixabay.com/audio/2022/03/15/audio_73da300958.mp3", // Level Up/Success
+  HINT: "https://cdn.pixabay.com/audio/2022/01/18/audio_d0c6ff1bab.mp3",    // Magic/Sparkle
+  ERROR: "https://cdn.pixabay.com/audio/2022/03/24/audio_33068779b5.mp3",   // Oops/Wrong
+  CLICK: "https://cdn.pixabay.com/audio/2021/08/04/audio_0625c13396.mp3",   // Pop/Click
+  TROPHY: "https://cdn.pixabay.com/audio/2021/08/04/audio_83d21104e1.mp3"  // Fanfare/Success
 };
