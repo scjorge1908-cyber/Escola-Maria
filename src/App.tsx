@@ -24,6 +24,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db, loginWithGoogle } from './lib/firebase';
 import { cn } from './lib/utils';
+import { VictoryCelebration } from './components/VictoryCelebration';
 import { EXERCISES } from './data/exercises';
 import { CATEGORIES, REWARDS, Category, Exercise, UserProfile } from './types';
 import { playSound, SOUNDS } from './lib/audio';
@@ -36,6 +37,10 @@ export default function App() {
   const [currentCategory, setCurrentCategory] = useState<Category | null>(null);
   const [currentExercise, setCurrentExercise] = useState<Exercise | null>(null);
   const [feedback, setFeedback] = useState<{ isCorrect: boolean; message: string } | null>(null);
+  const [showVictory, setShowVictory] = useState(false);
+  const [showDidacticIntro, setShowDidacticIntro] = useState(false);
+  const [exerciseForIntro, setExerciseForIntro] = useState<Exercise | null>(null);
+  const [selectedCategoryForList, setSelectedCategoryForList] = useState<Category | null>(null);
   const [aiResponse, setAiResponse] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
@@ -139,6 +144,8 @@ export default function App() {
     
     if (isCorrect) {
       playEffect(SOUNDS.SUCCESS);
+      setShowVictory(true);
+      setTimeout(() => setShowVictory(false), 4000);
       const msg = "Parabéns, Maria Eduarda! Você acertou! 🌟";
       setFeedback({ isCorrect: true, message: msg });
       
@@ -239,8 +246,13 @@ export default function App() {
       playEffect(SOUNDS.TROPHY);
     } else {
       setCurrentExercise(null);
-      setCurrentCategory(null);
+      if (!selectedCategoryForList) {
+        setCurrentCategory(null);
+      }
       setShowReviewList(false);
+      setFeedback(null);
+      setAiResponse(null);
+      setIsReviewing(false);
     }
   };
 
@@ -255,55 +267,32 @@ export default function App() {
   };
 
   const startExercise = (exercise: Exercise) => {
-    setCurrentExercise(exercise);
-    setCurrentCategory(exercise.category);
+    if (exercise.didacticExplanation || exercise.curiosity || exercise.didacticStory) {
+      setExerciseForIntro(exercise);
+      setShowDidacticIntro(true);
+      setCurrentExercise(null);
+    } else {
+      setCurrentExercise(exercise);
+      setCurrentCategory(exercise.category);
+    }
     setFeedback(null);
     setAiResponse(null);
     setSelectedPathIndex(null);
     setShowReviewList(false);
   };
 
-  const selectExercise = (category: Category | 'review', excludeId?: string) => {
+  const selectExercise = (category: Category | 'review') => {
     playEffect(SOUNDS.CLICK);
-    let exercise: Exercise | undefined;
-
     if (category === 'review') {
       const wrongIds = profile?.wrongExerciseIds || [];
       if (wrongIds.length === 0) {
         console.warn("Nenhum exercício para reforço no momento!");
         return;
       }
-      
-      if (wrongIds.length > 1 && !excludeId) {
-        setShowReviewList(true);
-        setCurrentExercise(null);
-        return;
-      }
-      
-      const randomWrongId = excludeId 
-        ? (wrongIds.find(id => id !== excludeId) || wrongIds[0])
-        : wrongIds[0];
-
-      exercise = EXERCISES.find(e => e.id === randomWrongId);
-      setIsReviewing(true);
+      setShowReviewList(true);
+      setCurrentExercise(null);
     } else {
-      const categoryExercises = EXERCISES.filter(e => e.category === category);
-      const userLevel = profile?.levels[category] || 0;
-      
-      // Try to find a different exercise if excludeId is provided
-      if (excludeId) {
-        const others = categoryExercises.filter(e => e.id !== excludeId);
-        exercise = others[Math.floor(Math.random() * others.length)] || categoryExercises[0];
-      } else {
-        exercise = categoryExercises[userLevel % categoryExercises.length];
-      }
-      
-      setIsReviewing(false);
-    }
-
-    if (exercise) {
-      setShowExplanation(false);
-      startExercise(exercise);
+      setSelectedCategoryForList(category);
     }
   };
 
@@ -317,7 +306,106 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-pink-50 font-sans text-gray-800 pb-20">
-      {/* Header */}
+      <AnimatePresence>
+        {showVictory && <VictoryCelebration />}
+        {showDidacticIntro && exerciseForIntro && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-pink-50 overflow-y-auto"
+          >
+            <div className="max-w-2xl mx-auto p-6 pt-12 pb-24">
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="bg-white rounded-[2.5rem] shadow-2xl p-8 border-4 border-white relative overflow-hidden"
+              >
+                {/* Decorative background circle */}
+                <div className="absolute -top-24 -right-24 w-64 h-64 bg-pink-100 rounded-full opacity-50" />
+                
+                <div className="relative z-10">
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="w-16 h-16 bg-pink-500 rounded-2xl flex items-center justify-center text-white shadow-lg rotate-3">
+                      <Book className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <h2 className="text-3xl font-black text-gray-800">Momento Mágico!</h2>
+                      <p className="text-pink-500 font-bold uppercase tracking-wider text-xs">Aprenda antes de começar</p>
+                    </div>
+                  </div>
+
+                  {exerciseForIntro.curiosity && (
+                    <div className="mb-8 bg-yellow-50 p-6 rounded-3xl border-2 border-yellow-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+                        <h3 className="font-black text-yellow-700">Você sabia?</h3>
+                      </div>
+                      <p className="text-gray-700 font-medium leading-relaxed">
+                        {exerciseForIntro.curiosity}
+                      </p>
+                    </div>
+                  )}
+
+                  {exerciseForIntro.didacticExplanation && (
+                    <div className="mb-8 p-1">
+                      <h3 className="text-xl font-black text-gray-800 mb-4 flex items-center gap-2">
+                        <MessageCircle className="text-pink-500" />
+                        Como funciona?
+                      </h3>
+                      <p className="text-gray-600 text-lg leading-relaxed font-medium bg-pink-50 p-6 rounded-3xl border-2 border-pink-100 italic">
+                        "{exerciseForIntro.didacticExplanation}"
+                      </p>
+                    </div>
+                  )}
+
+                  {exerciseForIntro.didacticStory && (
+                    <div className="mb-10">
+                      <h3 className="text-xl font-black text-gray-800 mb-4 flex items-center gap-2">
+                        <Gift className="text-purple-500" />
+                        Uma historinha curta:
+                      </h3>
+                      <div className="bg-purple-50 p-6 rounded-3xl border-2 border-purple-100">
+                        <p className="text-gray-700 leading-relaxed font-medium">
+                          {exerciseForIntro.didacticStory}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-4">
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => {
+                        playEffect(SOUNDS.SUCCESS);
+                        setCurrentExercise(exerciseForIntro);
+                        setCurrentCategory(exerciseForIntro.category);
+                        setShowDidacticIntro(false);
+                      }}
+                      className="w-full bg-gradient-to-r from-pink-500 to-purple-500 text-white font-black py-5 rounded-2xl shadow-xl text-xl flex items-center justify-center gap-3"
+                    >
+                      Estou Pronta! Começar Desafio 🚀
+                    </motion.button>
+                    
+                    <button 
+                      onClick={() => {
+                        playEffect(SOUNDS.CLICK);
+                        setShowDidacticIntro(false);
+                        setExerciseForIntro(null);
+                      }}
+                      className="text-gray-400 font-bold hover:text-gray-600 transition-colors py-2"
+                    >
+                      Voltar para a lista
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <header className="bg-white border-b border-pink-100 p-4 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -461,6 +549,71 @@ export default function App() {
                   </button>
                 );
               })}
+            </div>
+          </motion.div>
+        ) : selectedCategoryForList ? (
+          <motion.div 
+            initial={{ x: 50, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            className="bg-white rounded-3xl p-8 shadow-xl max-w-2xl mx-auto"
+          >
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-pink-100 rounded-2xl flex items-center justify-center text-pink-600">
+                  <Book className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black text-gray-800">
+                    {CATEGORIES.find(c => c.id === selectedCategoryForList)?.name}
+                  </h2>
+                  <p className="text-xs font-bold text-pink-400 uppercase tracking-widest">Escolha seu desafio mágico</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedCategoryForList(null)}
+                className="text-gray-400 hover:text-gray-600 font-bold flex items-center gap-1"
+              >
+                <ChevronLeft className="w-5 h-5" /> Voltar
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+              {EXERCISES.filter(e => e.category === selectedCategoryForList).map((ex, i) => (
+                <motion.button
+                  key={ex.id}
+                  initial={{ x: 20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: i * 0.05 }}
+                  onClick={() => {
+                    playEffect(SOUNDS.CLICK);
+                    setSelectedCategoryForList(null);
+                    startExercise(ex);
+                  }}
+                  className="group w-full p-5 rounded-[2rem] border-2 border-pink-50 hover:border-pink-300 hover:bg-pink-50 transition-all text-left flex items-center justify-between shadow-sm hover:shadow-md"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-black text-pink-500 shadow-inner group-hover:bg-pink-500 group-hover:text-white transition-colors">
+                      {i + 1}
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-800 text-sm leading-tight line-clamp-1">{ex.question}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={cn(
+                          "text-[9px] font-black uppercase px-2 py-0.5 rounded-full border",
+                          ex.difficulty === 'easy' ? "text-green-500 border-green-100 bg-green-50" :
+                          ex.difficulty === 'medium' ? "text-yellow-600 border-yellow-100 bg-yellow-50" :
+                          "text-red-500 border-red-100 bg-red-50"
+                        )}>
+                          {ex.difficulty === 'easy' ? 'Fácil' : ex.difficulty === 'medium' ? 'Médio' : 'Difícil'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center text-pink-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Star className="w-4 h-4 fill-current" />
+                  </div>
+                </motion.button>
+              ))}
             </div>
           </motion.div>
         ) : !currentExercise ? (

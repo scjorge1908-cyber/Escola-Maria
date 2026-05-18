@@ -19,6 +19,9 @@ export interface Exercise {
   correctOption: string;
   type: 'multipleChoice' | 'trueFalse' | 'ordering';
   narrativePaths?: NarrativePath[];
+  didacticExplanation?: string;
+  curiosity?: string;
+  didacticStory?: string;
 }
 
 export interface UserProfile {
