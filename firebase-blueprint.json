@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and progress",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "points": { "type": "number" },
+        "levels": {
+          "type": "object",
+          "description": "Current level per category",
+          "properties": {
+            "order": { "type": "number" },
+            "rounding": { "type": "number" },
+            "regularity": { "type": "number" },
+            "arithmetic": { "type": "number" },
+            "composition": { "type": "number" },
+            "sequence": { "type": "number" }
+          }
+        },
+        "unlockedRewards": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["name", "points", "levels"]
+    },
+    "Exercise": {
+      "title": "Exercise",
+      "description": "Math challenge with story",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string", "enum": ["order", "rounding", "regularity", "arithmetic", "composition", "sequence"] },
+        "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+        "story": { "type": "string" },
+        "question": { "type": "string" },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "correctOption": { "type": "string" },
+        "type": { "type": "string", "enum": ["multipleChoice", "trueFalse", "ordering"] }
+      },
+      "required": ["category", "difficulty", "story", "question", "correctOption", "type"]
+    },
+    "UserProgress": {
+      "title": "User Progress",
+      "description": "Tracking exercise completion",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "exerciseId": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "exerciseId", "completed", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/exercises/{exerciseId}": {
+      "schema": "Exercise",
+      "description": "Math exercises repository"
+    },
+    "/progress/{progressId}": {
+      "schema": "UserProgress",
+      "description": "User completion track"
+    }
+  }
+}

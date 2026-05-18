@@ -1,0 +1,8 @@
+{
+  "name": "Aventura Matemática da Maria Eduarda",
+  "description": "Um portal educativo e gamificado para ajudar a Maria Eduarda a dominar a matemática através de histórias e desafios interativos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

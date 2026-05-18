@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 3. Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && (
+        // Prevent points/levels cheating? Maybe just allow it for now for simplicity of this educational app
+        request.resource.data.diff(resource.data).affectedKeys().hasAny(['points', 'levels', 'unlockedRewards'])
+      );
+
+      function isValidUser(data) {
+        return data.keys().hasAll(['name', 'points', 'levels']) &&
+               data.name is string && data.name.size() <= 100 &&
+               data.points is number &&
+               data.levels is map &&
+               (!data.keys().contains('unlockedRewards') || data.unlockedRewards is list);
+      }
+    }
+
+    // --- Exercises Collection ---
+    match /exercises/{exerciseId} {
+      allow read: if isSignedIn();
+      // Admin only creation (manual for now)
+      allow write: if false; 
+    }
+
+    // --- Progress Collection ---
+    match /progress/{progressId} {
+      // 8. Secure List Queries
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn() && 
+                    request.resource.data.userId == request.auth.uid && 
+                    isValidProgress(request.resource.data);
+
+      function isValidProgress(data) {
+        return data.keys().hasAll(['userId', 'exerciseId', 'completed', 'timestamp']) &&
+               data.userId == request.auth.uid &&
+               data.exerciseId is string &&
+               data.completed is bool;
+      }
+    }
+  }
+}
