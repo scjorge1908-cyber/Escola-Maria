@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { 
   ArrowUpDown, Circle, Repeat, Plus, Minus, Box, Hash, 
   Trophy, Star, Gift, Book, Home, Youtube, MessageCircle,
-  ChevronRight, CheckCircle2, XCircle, LogOut, Loader2,
+  ChevronRight, ChevronLeft, CheckCircle2, XCircle, LogOut, Loader2,
   Volume2, VolumeX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -888,7 +888,7 @@ export default function App() {
 
                       <div className="flex flex-col gap-3">
                         <button 
-                          onClick={() => selectExercise(currentExercise.category, currentExercise.id)}
+                          onClick={() => selectExercise(currentExercise.category)}
                           className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-4 px-6 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
                         >
                           Tentar um novo desafio! 🚀

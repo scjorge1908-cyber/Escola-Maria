@@ -4,22 +4,18 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 import firebaseConfigImported from '../../firebase-applet-config.json';
 
 const firebaseConfig = {
-  ...firebaseConfigImported,
-  apiKey: "AIzaSyCgqBYEVPfCROLHU4XLVB4zAFlDuOVz-cU",
-  authDomain: "aventura-matematica-d2c39.firebaseapp.com",
-  projectId: "aventura-matematica-d2c39",
-  storageBucket: "aventura-matematica-d2c39.firebasestorage.app",
-  messagingSenderId: "32596439662",
-  appId: "1:32596439662:web:c0e0b182ed97f375d86c7f",
-  firestoreDatabaseId: "(default)" // Forçar o uso do banco padrão no projeto do usuário
+  ...firebaseConfigImported
 };
 
+// Se firestoreDatabaseId estiver presente na config importada, o initializeFirestore o usará.
+// Caso contrário, ele tentará o '(default)'.
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore with offline persistence
+// Se houver um firestoreDatabaseId específico, passamos para o initializeFirestore
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-});
+}, firebaseConfigImported.firestoreDatabaseId || '(default)');
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

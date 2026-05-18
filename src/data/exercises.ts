@@ -1233,5 +1233,295 @@ export const EXERCISES: Exercise[] = [
     options: ["30", "3", "300"],
     correctOption: "30",
     type: "multipleChoice"
+  },
+  {
+    id: "space-9",
+    category: "composition",
+    difficulty: "hard",
+    story: "O foguete percorreu 5.670 km. Qual o algarismo das centenas?",
+    question: "Algarismo das centenas:",
+    options: ["6", "5", "7"],
+    correctOption: "6",
+    type: "multipleChoice"
+  },
+  {
+    id: "space-10",
+    category: "composition",
+    difficulty: "medium",
+    story: "Marte tem 2 luas. Escreva o número 2 por extenso.",
+    question: "Por extenso:",
+    options: ["Dois", "Doze", "Dez"],
+    correctOption: "Dois",
+    type: "multipleChoice"
+  },
+  {
+    id: "arith-11",
+    category: "arithmetic",
+    difficulty: "medium",
+    story: "Um astronauta colheu 15 pedras e outro colheu 12.",
+    question: "Quantas pedras no total?",
+    options: ["27", "25", "30"],
+    correctOption: "27",
+    type: "multipleChoice"
+  },
+  {
+    id: "arith-12",
+    category: "arithmetic",
+    difficulty: "hard",
+    story: "Haviam 50 estrelas brilhando, 15 se apagaram.",
+    question: "Quantas continuam brilhando?",
+    options: ["35", "45", "25"],
+    correctOption: "35",
+    type: "multipleChoice"
+  },
+  {
+    id: "order-15",
+    category: "order",
+    difficulty: "easy",
+    story: "Coloque em ordem crescente: 10, 5, 8.",
+    question: "Ordem correta:",
+    options: ["5, 8, 10", "10, 8, 5", "8, 5, 10"],
+    correctOption: "5, 8, 10",
+    type: "multipleChoice"
+  },
+  {
+    id: "ant-17",
+    category: "order",
+    difficulty: "easy",
+    story: "Número 70.",
+    question: "Antecessor:",
+    options: ["69", "71", "60"],
+    correctOption: "69",
+    type: "multipleChoice"
+  },
+  {
+    id: "suc-17",
+    category: "order",
+    difficulty: "easy",
+    story: "Número 150.",
+    question: "Sucessor:",
+    options: ["151", "149", "160"],
+    correctOption: "151",
+    type: "multipleChoice"
+  },
+  {
+    id: "seq-11",
+    category: "sequence",
+    difficulty: "medium",
+    story: "Sequência: 3, 6, 9, __.",
+    question: "Qual o próximo?",
+    options: ["12", "10", "15"],
+    correctOption: "12",
+    type: "multipleChoice"
+  },
+  {
+    id: "reg-15",
+    category: "regularity",
+    difficulty: "medium",
+    story: "Sol, Lua, Sol, Lua, __.",
+    question: "Qual o próximo?",
+    options: ["Sol", "Lua", "Estrela"],
+    correctOption: "Sol",
+    type: "multipleChoice"
+  },
+  {
+    id: "space-11",
+    category: "composition",
+    difficulty: "hard",
+    story: "O telescópio custou 1.250 moedas. Qual o valor do 2?",
+    question: "Valor do 2:",
+    options: ["200", "20", "2000"],
+    correctOption: "200",
+    type: "multipleChoice"
+  },
+  {
+    id: "arith-13",
+    category: "arithmetic",
+    difficulty: "medium",
+    story: "Na estação espacial tem 20 robôs, chegaram mais 10.",
+    question: "Total de robôs:",
+    options: ["30", "20", "40"],
+    correctOption: "30",
+    type: "multipleChoice"
+  },
+  {
+    id: "order-16",
+    category: "order",
+    difficulty: "medium",
+    story: "Entre 80 e 82, qual número fica?",
+    question: "Número do meio:",
+    options: ["81", "79", "83"],
+    correctOption: "81",
+    type: "multipleChoice"
+  },
+  {
+    id: "ant-18",
+    category: "order",
+    difficulty: "easy",
+    story: "Número 300.",
+    question: "Antecessor:",
+    options: ["299", "301", "290"],
+    correctOption: "299",
+    type: "multipleChoice"
+  },
+  {
+    id: "suc-18",
+    category: "order",
+    difficulty: "easy",
+    story: "Número 499.",
+    question: "Sucessor:",
+    options: ["500", "498", "490"],
+    correctOption: "500",
+    type: "multipleChoice"
+  },
+  {
+    id: "seq-12",
+    category: "sequence",
+    difficulty: "hard",
+    story: "100, 200, 300, __.",
+    question: "Qual o próximo?",
+    options: ["400", "350", "500"],
+    correctOption: "400",
+    type: "multipleChoice"
+  },
+  {
+    id: "arith-14",
+    category: "arithmetic",
+    difficulty: "easy",
+    story: "Comprei 5 maçãs e comi 2.",
+    question: "Sobraram:",
+    options: ["3", "2", "5"],
+    correctOption: "3",
+    type: "multipleChoice"
+  },
+  {
+    id: "arith-15",
+    category: "arithmetic",
+    difficulty: "medium",
+    story: "Tenho 2 dezenas de balas e ganhei 5 balas.",
+    question: "Total:",
+    options: ["25", "20", "15"],
+    correctOption: "25",
+    type: "multipleChoice"
+  },
+  {
+    id: "space-12",
+    category: "composition",
+    difficulty: "medium",
+    story: "Vênus é o 2º planeta. Escreva 'dois'.",
+    question: "Escrita correta:",
+    options: ["Dois", "Doz", "Dois"],
+    correctOption: "Dois",
+    type: "multipleChoice"
+  },
+  {
+    id: "order-17",
+    category: "order",
+    difficulty: "hard",
+    story: "Ordem decrescente: 100, 50, 75.",
+    question: "Ordem correta:",
+    options: ["100, 75, 50", "100, 50, 75", "50, 75, 100"],
+    correctOption: "100, 75, 50",
+    type: "multipleChoice"
+  },
+  {
+    id: "ant-19",
+    category: "order",
+    difficulty: "medium",
+    story: "Ano 2026.",
+    question: "Antecessor:",
+    options: ["2025", "2027", "2020"],
+    correctOption: "2025",
+    type: "multipleChoice"
+  },
+  {
+    id: "suc-19",
+    category: "order",
+    difficulty: "medium",
+    story: "Ano 2026.",
+    question: "Sucessor:",
+    options: ["2027", "2025", "2030"],
+    correctOption: "2027",
+    type: "multipleChoice"
+  },
+  {
+    id: "seq-13",
+    category: "sequence",
+    difficulty: "medium",
+    story: "Sequência: 50, 60, 70, __.",
+    question: "Qual o próximo?",
+    options: ["80", "75", "90"],
+    correctOption: "80",
+    type: "multipleChoice"
+  },
+  {
+    id: "arith-16",
+    category: "arithmetic",
+    difficulty: "hard",
+    story: "Maria tinha 80 reais. Gastou 22.",
+    question: "Sobrou:",
+    options: ["58", "68", "60"],
+    correctOption: "58",
+    type: "multipleChoice"
+  },
+  {
+    id: "arith-17",
+    category: "arithmetic",
+    difficulty: "medium",
+    story: "Uma caixa tem 24 lápis. Metade é azul.",
+    question: "Quantos azuis?",
+    options: ["12", "24", "10"],
+    correctOption: "12",
+    type: "multipleChoice"
+  },
+  {
+    id: "space-13",
+    category: "composition",
+    difficulty: "easy",
+    story: "Número 40.",
+    question: "Dezenas:",
+    options: ["4", "0", "40"],
+    correctOption: "4",
+    type: "multipleChoice"
+  },
+  {
+    id: "order-18",
+    category: "order",
+    difficulty: "easy",
+    story: "Ordem crescente: 7, 3, 5.",
+    question: "Correto:",
+    options: ["3, 5, 7", "7, 5, 3", "3, 7, 5"],
+    correctOption: "3, 5, 7",
+    type: "multipleChoice"
+  },
+  {
+    id: "ant-20",
+    category: "order",
+    difficulty: "easy",
+    story: "Número 500.",
+    question: "Antecessor:",
+    options: ["499", "501", "400"],
+    correctOption: "499",
+    type: "multipleChoice"
+  },
+  {
+    id: "suc-20",
+    category: "order",
+    difficulty: "medium",
+    story: "Ano 1999.",
+    question: "Sucessor:",
+    options: ["2000", "1998", "1900"],
+    correctOption: "2000",
+    type: "multipleChoice"
+  },
+  {
+    id: "seq-14",
+    category: "sequence",
+    difficulty: "hard",
+    story: "1000, 900, 800, __.",
+    question: "Qual o próximo?",
+    options: ["700", "750", "850"],
+    correctOption: "700",
+    type: "multipleChoice"
   }
 ];
