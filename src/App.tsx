@@ -305,9 +305,9 @@ export default function App() {
                 {profile && profile.wrongExerciseIds && profile.wrongExerciseIds.length > 0 && (
                   <button 
                     onClick={() => selectExercise('review')}
-                    className="bg-purple-100 text-purple-700 font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-2 hover:bg-purple-200 transition-colors"
+                    className="bg-purple-100 text-purple-700 font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-2 hover:bg-purple-200 transition-colors shadow-sm border border-purple-200"
                   >
-                    <Repeat className="w-4 h-4" /> Reforço: Melhore Seus Erros
+                    <Repeat className="w-4 h-4" /> Exercício a ser melhorado
                   </button>
                 )}
               </div>
