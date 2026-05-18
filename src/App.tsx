@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { 
   ArrowUpDown, Circle, Repeat, Plus, Minus, Box, Hash, 
   Trophy, Star, Gift, Book, Home, Youtube, MessageCircle,
-  ChevronRight, CheckCircle2, XCircle, LogOut, Loader2
+  ChevronRight, CheckCircle2, XCircle, LogOut, Loader2,
+  Volume2, VolumeX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -25,6 +26,7 @@ import { auth, db, loginWithGoogle } from './lib/firebase';
 import { cn } from './lib/utils';
 import { EXERCISES } from './data/exercises';
 import { CATEGORIES, REWARDS, Category, Exercise, UserProfile } from './types';
+import { playSound, SOUNDS } from './lib/audio';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -38,6 +40,16 @@ export default function App() {
   const [isReviewing, setIsReviewing] = useState(false);
   const [sessionResults, setSessionResults] = useState<{ id: string; correct: boolean }[]>([]);
   const [showSummary, setShowSummary] = useState(false);
+  const [showReviewList, setShowReviewList] = useState(false);
+  const [selectedPathIndex, setSelectedPathIndex] = useState<number | null>(null);
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+
+  const toggleMute = () => setIsMuted(prev => !prev);
+
+  const playEffect = (url: string) => {
+    if (!isMuted) playSound(url);
+  };
 
   // Auth Listener
   useEffect(() => {
@@ -85,10 +97,14 @@ export default function App() {
   const handleAnswer = async (option: string) => {
     if (!currentExercise || feedback || !user || !profile) return;
 
-    const isCorrect = option === currentExercise.correctOption;
+    const correctOption = (selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].correctOptionOverride) 
+      || currentExercise.correctOption;
+
+    const isCorrect = option === correctOption;
     setSessionResults(prev => [...prev, { id: currentExercise.id, correct: isCorrect }]);
     
     if (isCorrect) {
+      playEffect(SOUNDS.SUCCESS);
       setFeedback({ isCorrect: true, message: "Parabéns, Maria Eduarda! Você acertou! 🌟" });
       
       // Update progress
@@ -123,6 +139,7 @@ export default function App() {
         console.error("Error updating progress:", error);
       }
     } else {
+      playEffect(SOUNDS.ERROR);
       setFeedback({ isCorrect: false, message: "Ops! Quase lá... Vamos tentar de novo? ❤️" });
       
       // Add to wrong ids
@@ -131,7 +148,23 @@ export default function App() {
       setProfile(updatedProfile);
       await updateDoc(doc(db, 'users', user.uid), { wrongExerciseIds: newWrongIds });
 
-      askAiAssistant(`Maria Eduarda errou o exercício: "${currentExercise.question}". A história era: "${currentExercise.story}". Ela marcou "${option}" mas o correto era "${currentExercise.correctOption}". Dê uma dica carinhosa sem dar a resposta.`);
+      const storyText = selectedPathIndex !== null && currentExercise.narrativePaths 
+        ? currentExercise.narrativePaths[selectedPathIndex].storySegment 
+        : currentExercise.story;
+      
+      const questionText = selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].questionOverride 
+        ? currentExercise.narrativePaths[selectedPathIndex].questionOverride 
+        : currentExercise.question;
+
+      askAiAssistant(`A Maria Eduarda tem 8 anos e errou uma questão de matemática. 
+      Exercício: "${questionText}"
+      A história era: "${storyText}"
+      Ela marcou: "${option}"
+      O correto era: "${correctOption}"
+      
+      POR FAVOR: Explique de um jeito MUITO lúdico, carinhoso e divertido por que a resposta certa é ${correctOption}. 
+      Use metáforas simples (como doces, brinquedos ou animais) e incentive ela dizendo que errar faz parte do aprendizado mágico! 
+      Mantenha curto, no máximo 3 frases pequenas.`);
     }
   };
 
@@ -145,6 +178,7 @@ export default function App() {
       });
       const data = await res.json();
       setAiResponse(data.response);
+      playEffect(SOUNDS.HINT);
     } catch (error) {
       console.error("AI Error:", error);
     } finally {
@@ -153,22 +187,38 @@ export default function App() {
   };
 
   const handleGoHome = () => {
+    playEffect(SOUNDS.CLICK);
     if (sessionResults.length > 0) {
       setShowSummary(true);
+      playEffect(SOUNDS.TROPHY);
     } else {
       setCurrentExercise(null);
       setCurrentCategory(null);
+      setShowReviewList(false);
     }
   };
 
   const closeSummary = () => {
+    playEffect(SOUNDS.CLICK);
     setShowSummary(false);
     setSessionResults([]);
     setCurrentExercise(null);
     setCurrentCategory(null);
+    setSelectedPathIndex(null);
+    setShowReviewList(false);
   };
 
-  const selectExercise = (category: Category | 'review') => {
+  const startExercise = (exercise: Exercise) => {
+    setCurrentExercise(exercise);
+    setCurrentCategory(exercise.category);
+    setFeedback(null);
+    setAiResponse(null);
+    setSelectedPathIndex(null);
+    setShowReviewList(false);
+  };
+
+  const selectExercise = (category: Category | 'review', excludeId?: string) => {
+    playEffect(SOUNDS.CLICK);
     let exercise: Exercise | undefined;
 
     if (category === 'review') {
@@ -177,22 +227,37 @@ export default function App() {
         alert("Nenhum exercício para reforço no momento! Bom trabalho!");
         return;
       }
-      const randomWrongId = wrongIds[Math.floor(Math.random() * wrongIds.length)];
+      
+      if (wrongIds.length > 1 && !excludeId) {
+        setShowReviewList(true);
+        setCurrentExercise(null);
+        return;
+      }
+      
+      const randomWrongId = excludeId 
+        ? (wrongIds.find(id => id !== excludeId) || wrongIds[0])
+        : wrongIds[0];
+
       exercise = EXERCISES.find(e => e.id === randomWrongId);
       setIsReviewing(true);
     } else {
       const categoryExercises = EXERCISES.filter(e => e.category === category);
       const userLevel = profile?.levels[category] || 0;
-      // Get all unique exercises in this category to avoid immediate repetition if possible
-      exercise = categoryExercises[userLevel % categoryExercises.length];
+      
+      // Try to find a different exercise if excludeId is provided
+      if (excludeId) {
+        const others = categoryExercises.filter(e => e.id !== excludeId);
+        exercise = others[Math.floor(Math.random() * others.length)] || categoryExercises[0];
+      } else {
+        exercise = categoryExercises[userLevel % categoryExercises.length];
+      }
+      
       setIsReviewing(false);
     }
 
     if (exercise) {
-      setCurrentExercise(exercise);
-      setCurrentCategory(exercise.category);
-      setFeedback(null);
-      setAiResponse(null);
+      setShowExplanation(false);
+      startExercise(exercise);
     }
   };
 
@@ -245,12 +310,21 @@ export default function App() {
               </div>
             </div>
           </div>
-          <button 
-            onClick={() => signOut(auth)}
-            className="p-2 hover:bg-gray-100 rounded-full text-gray-500"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={toggleMute}
+              className="p-2 hover:bg-pink-50 rounded-full text-pink-500 transition-colors"
+              title={isMuted ? "Ativar som" : "Desativar som"}
+            >
+              {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+            </button>
+            <button 
+              onClick={() => signOut(auth)}
+              className="p-2 hover:bg-gray-100 rounded-full text-gray-500"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -293,6 +367,49 @@ export default function App() {
             >
               Continuar Aprendendo
             </button>
+          </motion.div>
+        ) : showReviewList ? (
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-3xl p-8 shadow-xl max-w-2xl mx-auto"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold flex items-center gap-2">
+                <Repeat className="text-purple-500" /> Seus Reforços
+              </h2>
+              <button 
+                onClick={() => setShowReviewList(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                Voltar
+              </button>
+            </div>
+            
+            <p className="text-gray-600 mb-6 font-medium">Maria Eduarda, aqui estão os desafios que vamos vencer juntas! ❤️</p>
+            
+            <div className="space-y-3 max-h-[400px] overflow-y-auto p-1">
+              {(profile?.wrongExerciseIds || []).map((id) => {
+                const ex = EXERCISES.find(e => e.id === id);
+                if (!ex) return null;
+                return (
+                  <button 
+                    key={id}
+                    onClick={() => {
+                      setIsReviewing(true);
+                      startExercise(ex);
+                    }}
+                    className="w-full p-4 rounded-2xl border-2 border-purple-100 hover:border-purple-300 hover:bg-purple-50 transition-all text-left flex items-center justify-between group"
+                  >
+                    <div>
+                      <p className="font-bold text-gray-800 text-sm tracking-tight">{ex.question}</p>
+                      <p className="text-[10px] uppercase font-bold text-purple-400 mt-1">{ex.category}</p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-purple-200 group-hover:text-purple-500 transition-colors" />
+                  </button>
+                );
+              })}
+            </div>
           </motion.div>
         ) : !currentExercise ? (
           <div className="space-y-8">
@@ -403,38 +520,80 @@ export default function App() {
 
               {/* Story */}
               <div className="bg-pink-50 p-6 rounded-2xl mb-6 relative">
-                <p className="text-lg leading-relaxed italic text-gray-700">
-                  "{currentExercise.story}"
-                </p>
-                <div className="absolute -bottom-2 -left-2 w-4 h-4 bg-pink-50 rotate-45" />
+                {currentExercise.narrativePaths && selectedPathIndex === null ? (
+                  <div>
+                    <p className="text-lg font-bold text-pink-600 mb-4">O que a Maria deve fazer agora?</p>
+                    <div className="grid grid-cols-1 gap-3">
+                      {currentExercise.narrativePaths.map((path, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => {
+                            setSelectedPathIndex(idx);
+                            playEffect(SOUNDS.CLICK);
+                          }}
+                          className="bg-white p-4 rounded-xl border-2 border-pink-200 hover:border-pink-500 hover:bg-pink-100 transition-all text-left font-medium flex items-center justify-between group"
+                        >
+                          {path.choice}
+                          <ChevronRight className="w-5 h-5 text-pink-400 group-hover:translate-x-1 transition-transform" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-lg leading-relaxed italic text-gray-700">
+                      "{selectedPathIndex !== null && currentExercise.narrativePaths 
+                        ? currentExercise.narrativePaths[selectedPathIndex].storySegment 
+                        : currentExercise.story}"
+                    </p>
+                    <div className="absolute -bottom-2 -left-2 w-4 h-4 bg-pink-50 rotate-45" />
+                  </>
+                )}
               </div>
 
-              <h2 className="text-2xl font-bold mb-8">{currentExercise.question}</h2>
+              {/* Only show question if no choices needed or choice made */}
+              {( !currentExercise.narrativePaths || selectedPathIndex !== null ) && (
+                <>
+                  <h2 className="text-2xl font-bold mb-8">
+                    {selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].questionOverride 
+                      ? currentExercise.narrativePaths[selectedPathIndex].questionOverride 
+                      : currentExercise.question}
+                  </h2>
 
-              <div className="space-y-4">
-                {currentExercise.options.map((option, i) => (
-                  <button
-                    key={i}
-                    disabled={!!feedback}
-                    onClick={() => handleAnswer(option)}
-                    className={cn(
-                      "w-full p-4 text-left rounded-2xl border-2 font-bold text-lg transition-all",
-                      feedback?.isCorrect && option === currentExercise.correctOption 
-                        ? "bg-green-100 border-green-500 text-green-700"
-                        : feedback && !feedback.isCorrect && option === currentExercise.correctOption
-                        ? "border-green-300"
-                        : feedback && !feedback.isCorrect && option !== currentExercise.correctOption
-                        ? "bg-red-50 border-gray-200 opacity-50"
-                        : "border-gray-100 hover:border-pink-300 hover:bg-pink-50"
-                    )}
-                  >
-                    <span className="inline-block w-8 h-8 rounded-full bg-gray-100 text-center leading-8 mr-3 text-sm">
-                      {String.fromCharCode(65 + i)}
-                    </span>
-                    {option}
-                  </button>
-                ))}
-              </div>
+                  <div className="space-y-4">
+                    {(selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].optionsOverride 
+                      ? currentExercise.narrativePaths[selectedPathIndex].optionsOverride 
+                      : currentExercise.options).map((option, i) => {
+                        const correctOpt = selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].correctOptionOverride 
+                          ? currentExercise.narrativePaths[selectedPathIndex].correctOptionOverride 
+                          : currentExercise.correctOption;
+
+                        return (
+                          <button
+                            key={i}
+                            disabled={!!feedback}
+                            onClick={() => handleAnswer(option)}
+                            className={cn(
+                              "w-full p-4 text-left rounded-2xl border-2 font-bold text-lg transition-all",
+                              feedback?.isCorrect && option === correctOpt
+                                ? "bg-green-100 border-green-500 text-green-700"
+                                : feedback && !feedback.isCorrect && option === correctOpt
+                                ? "border-green-300"
+                                : feedback && !feedback.isCorrect && option !== correctOpt
+                                ? "bg-red-50 border-gray-200 opacity-50"
+                                : "border-gray-100 hover:border-pink-300 hover:bg-pink-50"
+                            )}
+                          >
+                            <span className="inline-block w-8 h-8 rounded-full bg-gray-100 text-center leading-8 mr-3 text-sm">
+                              {String.fromCharCode(65 + i)}
+                            </span>
+                            {option}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </>
+              )}
 
               {/* Feedback Overlay */}
               {feedback && (
@@ -449,36 +608,78 @@ export default function App() {
                   {feedback.isCorrect ? <CheckCircle2 /> : <XCircle />}
                   <div className="flex-1">
                     <p className="font-bold">{feedback.message}</p>
-                    {feedback.isCorrect && (
+                    {feedback.isCorrect ? (
                       <button 
                         onClick={() => selectExercise(currentExercise.category)}
                         className="mt-2 text-sm font-bold flex items-center gap-1 hover:underline"
                       >
                         Próximo Desafio <ChevronRight className="w-4 h-4" />
                       </button>
+                    ) : (
+                      <button 
+                        onClick={() => setShowExplanation(true)}
+                        className="mt-2 text-sm font-bold flex items-center gap-1 hover:underline"
+                      >
+                        <Repeat className="w-4 h-4" /> Exercício a ser melhorado
+                      </button>
                     )}
                   </div>
                 </motion.div>
               )}
 
-              {/* AI Assistant Tooltip */}
+              {/* Learning Moment Explanation */}
               <AnimatePresence>
-                {aiResponse && (
+                {showExplanation && (
                   <motion.div 
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="mt-6 bg-purple-50 border border-purple-200 p-4 rounded-2xl flex gap-4"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-pink-500/20 backdrop-blur-sm"
                   >
-                    <div className="w-10 h-10 bg-purple-500 rounded-full flex-shrink-0 flex items-center justify-center text-white">
-                      <MessageCircle className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-purple-700 mb-1">Amigo Tutor diz:</p>
-                      <p className="text-sm text-purple-900 leading-relaxed">{aiResponse}</p>
+                    <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-lg w-full relative">
+                      <div className="flex items-center gap-4 mb-6">
+                        <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center">
+                          <MessageCircle className="w-8 h-8 text-purple-500" />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-bold text-purple-600">Explicação Mágica! ✨</h3>
+                          <p className="text-gray-500 font-medium">Vamos aprender juntas?</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-purple-50 p-6 rounded-2xl mb-8">
+                        {isAiLoading ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+                          </div>
+                        ) : (
+                          <p className="text-lg text-purple-900 leading-relaxed italic">
+                            "{aiResponse || "Espere um pouquinho, estou preparando uma dica especial..."}"
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-3">
+                        <button 
+                          onClick={() => selectExercise(currentExercise.category, currentExercise.id)}
+                          className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-4 px-6 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
+                        >
+                          Tentar um novo desafio! 🚀
+                        </button>
+                        <button 
+                          onClick={() => setShowExplanation(false)}
+                          className="w-full text-gray-400 font-bold py-2 hover:text-gray-600 transition-colors"
+                        >
+                          Voltar
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
+
+              {/* AI Assistant Tooltip (Legacy - removing to favor the modal when explanation is clicked) */}
+              {/* Replacing with cleaner tooltip only for quick hints if needed, but the user requested the explanation on button click */}
 
               {isAiLoading && (
                 <div className="mt-4 flex justify-center">

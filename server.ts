@@ -12,6 +12,12 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Simple logger to see what's reaching the server
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.url}`);
+    next();
+  });
+
   // API Route: AI Assistant for Maria Eduarda
   app.post("/api/assistant", async (req, res) => {
     try {
@@ -48,14 +54,18 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const { createServer: createViteServer } = await import("vite");
+  const isDev = process.env.NODE_ENV !== "production";
+  console.log(`Maria Eduarda's Math Portal Starting... (Dev: ${isDev})`);
+
+  if (isDev) {
+    console.log("Initializing Vite Middleware...");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
+    console.log("Serving static files from dist...");
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {

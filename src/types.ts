@@ -1,6 +1,14 @@
 export type Category = 'order' | 'rounding' | 'regularity' | 'arithmetic' | 'composition' | 'sequence';
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
+export interface NarrativePath {
+  choice: string;
+  storySegment: string;
+  questionOverride?: string;
+  optionsOverride?: string[];
+  correctOptionOverride?: string;
+}
+
 export interface Exercise {
   id: string;
   category: Category;
@@ -10,6 +18,7 @@ export interface Exercise {
   options: string[];
   correctOption: string;
   type: 'multipleChoice' | 'trueFalse' | 'ordering';
+  narrativePaths?: NarrativePath[];
 }
 
 export interface UserProfile {

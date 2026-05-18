@@ -10,7 +10,17 @@ export const EXERCISES: Exercise[] = [
     question: "Como os números ficam na ordem CRESCENTE (do menor para o maior)?",
     options: ["5, 8, 12", "12, 8, 5", "8, 5, 12"],
     correctOption: "5, 8, 12",
-    type: "multipleChoice"
+    type: "multipleChoice",
+    narrativePaths: [
+      {
+        choice: "Ajudar a Mimi agora",
+        storySegment: "Mimi fica muito feliz com sua ajuda rápida! Ela encontrou sementes de maçã.",
+      },
+      {
+        choice: "Falar com o grilo primeiro",
+        storySegment: "O grilo disse que Mimi é muito organizada. Vamos ajudá-la com as sementes que ela já tem!",
+      }
+    ]
   },
   {
     id: "ord-2",
@@ -212,7 +222,17 @@ export const EXERCISES: Exercise[] = [
     question: "Com quantas ele ficou?",
     options: ["20", "22", "25"],
     correctOption: "22",
-    type: "multipleChoice"
+    type: "multipleChoice",
+    narrativePaths: [
+      {
+        choice: "Guardar no álbum",
+        storySegment: "João decide guardar as figurinhas no álbum. Maria Eduarda ajuda a contar.",
+      },
+      {
+        choice: "Trocar com amigos",
+        storySegment: "Antes de trocar, João precisa saber o total que ele tem agora!",
+      }
+    ]
   },
   {
     id: "ari-2",
@@ -333,7 +353,17 @@ export const EXERCISES: Exercise[] = [
     question: "Qual o número?",
     options: ["508", "58", "580"],
     correctOption: "508",
-    type: "multipleChoice"
+    type: "multipleChoice",
+    narrativePaths: [
+      {
+        choice: "Lugar o robô",
+        storySegment: "O robô começa a brilhar! O painel mostra um número importante.",
+      },
+      {
+        choice: "Pintar o robô de azul",
+        storySegment: "O robô azul ficou lindo! Agora vamos ver qual o código dele.",
+      }
+    ]
   },
   {
     id: "com-4",
@@ -400,6 +430,7 @@ export const EXERCISES: Exercise[] = [
     category: "composition",
     difficulty: "easy",
     story: "Quanto valem 3 centenas?",
+    question: "Qual o valor total?",
     options: ["300", "30", "3000"],
     correctOption: "300",
     type: "multipleChoice"
@@ -433,7 +464,17 @@ export const EXERCISES: Exercise[] = [
     question: "Qual o próximo?",
     options: ["50", "60", "45"],
     correctOption: "50",
-    type: "multipleChoice"
+    type: "multipleChoice",
+    narrativePaths: [
+      {
+        choice: "Dar pão para os patinhos",
+        storySegment: "Os patinhos ficam felizes e continuam a nadar na mesma ordem!",
+      },
+      {
+        choice: "Contar os patinhos de longe",
+        storySegment: "De longe, a fila parece infinita! Vamos ver o próximo número.",
+      }
+    ]
   },
   {
     id: "seq-4",
@@ -514,7 +555,17 @@ export const EXERCISES: Exercise[] = [
     question: "Qual a próxima?",
     options: ["Azul", "Rosa", "Verde"],
     correctOption: "Azul",
-    type: "multipleChoice"
+    type: "multipleChoice",
+    narrativePaths: [
+      {
+        choice: "Dar o colar para a mamãe",
+        storySegment: "A mamãe vai amar o colar! Vamos terminar de montar o padrão.",
+      },
+      {
+        choice: "Colocar no pescoço",
+        storySegment: "O colar ficou lindo em você! Falta só uma peça para o padrão ficar perfeito.",
+      }
+    ]
   },
   {
     id: "reg-2",
