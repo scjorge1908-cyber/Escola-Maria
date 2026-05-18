@@ -15,11 +15,18 @@ googleProvider.setCustomParameters({
 
 export const loginWithGoogle = async () => {
   try {
+    console.log("Tentando login a partir de:", window.location.origin);
     return await signInWithPopup(auth, googleProvider);
   } catch (error: any) {
     if (error.code === 'auth/unauthorized-domain') {
       console.error(
-        "DOMÍNIO NÃO AUTORIZADO: Adicione 'scjorge1908-cyber.github.io' no Console do Firebase > Authentication > Settings > Authorized Domains."
+        "ERRO DE DOMÍNIO: O domínio '" + window.location.origin + "' não está autorizado no Firebase."
+      );
+      console.error(
+        "Siga estes passos:\n" +
+        "1. Acesse o Console do Firebase > Authentication > Settings > Authorized Domains.\n" +
+        "2. Certifique-se de que '" + window.location.hostname + "' está na lista.\n" +
+        "3. Verifique se a Chave de API no Google Cloud Console possui restrições de referenciador (HTTP) que bloqueiam este domínio."
       );
     }
     throw error;
