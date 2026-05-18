@@ -6,7 +6,11 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
+    base: '/Escola-Maria/',
     plugins: [react(), tailwindcss()],
+    build: {
+      outDir: 'docs',
+    },
     resolve: {
       alias: {
         '@': path.resolve(process.cwd(), '.'),
