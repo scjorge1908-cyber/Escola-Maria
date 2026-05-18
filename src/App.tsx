@@ -32,6 +32,7 @@ export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const GUEST_UID = 'guest_maria_eduarda';
   const [currentCategory, setCurrentCategory] = useState<Category | null>(null);
   const [currentExercise, setCurrentExercise] = useState<Exercise | null>(null);
   const [feedback, setFeedback] = useState<{ isCorrect: boolean; message: string } | null>(null);
@@ -47,8 +48,8 @@ export default function App() {
 
   const toggleMute = () => setIsMuted(prev => !prev);
 
-  const playEffect = (url: string) => {
-    if (!isMuted) playSound(url);
+  const playEffect = (key: keyof typeof SOUNDS) => {
+    if (!isMuted) playSound(key as any);
   };
 
   // Auth Listener
@@ -58,7 +59,8 @@ export default function App() {
       if (u) {
         await fetchProfile(u.uid);
       } else {
-        setProfile(null);
+        // Fallback to guest profile if not logged in
+        await fetchProfile(GUEST_UID);
       }
       setLoading(false);
     });
@@ -66,36 +68,68 @@ export default function App() {
   }, []);
 
   const fetchProfile = async (uid: string) => {
+    let currentProfile: UserProfile | null = null;
+    
     try {
+      // First, try to load from localStorage as a quick fallback
+      const localData = localStorage.getItem(`profile_${uid}`);
+      if (localData) {
+        currentProfile = JSON.parse(localData);
+        setProfile(currentProfile);
+      }
+
       const docRef = doc(db, 'users', uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        setProfile(docSnap.data() as UserProfile);
-      } else {
+      
+      // Use getDoc - it will try cache first if configured
+      let docSnap;
+      try {
+        docSnap = await getDoc(docRef);
+      } catch (e) {
+        console.warn("Firestore getDoc failed (possibly offline):", e);
+        // If it failed, we rely on localData which might already be in currentProfile
+      }
+      
+      if (docSnap && docSnap.exists()) {
+        const data = docSnap.data() as UserProfile;
+        currentProfile = data;
+        setProfile(data);
+        localStorage.setItem(`profile_${uid}`, JSON.stringify(data));
+      } else if (!currentProfile) {
+        // Only create new if we don't even have local data
         const newProfile: UserProfile = {
-          name: auth.currentUser?.displayName || 'Maria Eduarda',
+          name: 'Maria Eduarda',
           points: 0,
-          levels: {
-            order: 0,
-            rounding: 0,
-            regularity: 0,
-            arithmetic: 0,
-            composition: 0,
-            sequence: 0
-          },
+          levels: { order: 0, rounding: 0, regularity: 0, arithmetic: 0, composition: 0, sequence: 0 },
           unlockedRewards: [],
           wrongExerciseIds: []
         };
-        await setDoc(docRef, newProfile);
+        // Try to save to Firestore, but don't block
+        setDoc(docRef, newProfile).catch(e => console.warn("Could not save new profile to Firestore:", e));
+        currentProfile = newProfile;
         setProfile(newProfile);
+        localStorage.setItem(`profile_${uid}`, JSON.stringify(newProfile));
       }
     } catch (error) {
-      console.error("Error fetching profile:", error);
+      console.error("Error in fetchProfile:", error);
+    } finally {
+      // Ensure we have AT LEAST a default profile to avoid white/loading screen
+      if (!currentProfile && !profile) {
+        const defaultProfile: UserProfile = {
+          name: 'Maria Eduarda',
+          points: 0,
+          levels: { order: 0, rounding: 0, regularity: 0, arithmetic: 0, composition: 0, sequence: 0 },
+          unlockedRewards: [],
+          wrongExerciseIds: []
+        };
+        setProfile(defaultProfile);
+      }
+      setLoading(false);
     }
   };
 
   const handleAnswer = async (option: string) => {
-    if (!currentExercise || feedback || !user || !profile) return;
+    if (!currentExercise || feedback || !profile) return;
+    const uid = user?.uid || GUEST_UID;
 
     const correctOption = (selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].correctOptionOverride) 
       || currentExercise.correctOption;
@@ -105,7 +139,8 @@ export default function App() {
     
     if (isCorrect) {
       playEffect(SOUNDS.SUCCESS);
-      setFeedback({ isCorrect: true, message: "Parabéns, Maria Eduarda! Você acertou! 🌟" });
+      const msg = "Parabéns, Maria Eduarda! Você acertou! 🌟";
+      setFeedback({ isCorrect: true, message: msg });
       
       // Update progress
       const newPoints = profile.points + 10;
@@ -126,11 +161,12 @@ export default function App() {
 
       const updatedProfile = { ...profile, points: newPoints, levels: newLevels, unlockedRewards: newRewards, wrongExerciseIds: newWrongIds };
       setProfile(updatedProfile);
+      localStorage.setItem(`profile_${uid}`, JSON.stringify(updatedProfile));
       
       try {
-        await updateDoc(doc(db, 'users', user.uid), updatedProfile);
+        await updateDoc(doc(db, 'users', uid), updatedProfile);
         await setDoc(doc(collection(db, 'progress')), {
-          userId: user.uid,
+          userId: uid,
           exerciseId: currentExercise.id,
           completed: true,
           timestamp: serverTimestamp()
@@ -140,13 +176,20 @@ export default function App() {
       }
     } else {
       playEffect(SOUNDS.ERROR);
-      setFeedback({ isCorrect: false, message: "Ops! Quase lá... Vamos tentar de novo? ❤️" });
+      const msg = "Ops! Quase lá... Vamos tentar de novo? ❤️";
+      setFeedback({ isCorrect: false, message: msg });
       
       // Add to wrong ids
       const newWrongIds = Array.from(new Set([...(profile.wrongExerciseIds || []), currentExercise.id]));
       const updatedProfile = { ...profile, wrongExerciseIds: newWrongIds };
       setProfile(updatedProfile);
-      await updateDoc(doc(db, 'users', user.uid), { wrongExerciseIds: newWrongIds });
+      localStorage.setItem(`profile_${uid}`, JSON.stringify(updatedProfile));
+      
+      try {
+        await updateDoc(doc(db, 'users', uid), { wrongExerciseIds: newWrongIds });
+      } catch (e) {
+        console.error("Error updating wrong exercises:", e);
+      }
 
       const storyText = selectedPathIndex !== null && currentExercise.narrativePaths 
         ? currentExercise.narrativePaths[selectedPathIndex].storySegment 
@@ -264,34 +307,10 @@ export default function App() {
     }
   };
 
-  if (loading) {
+  if (loading || !profile) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-pink-50">
         <Loader2 className="w-12 h-12 text-pink-500 animate-spin" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-pink-100 to-purple-100 p-6 text-center">
-        <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full"
-        >
-          <div className="w-24 h-24 bg-pink-500 rounded-full flex items-center justify-center mx-auto mb-6 text-white text-4xl font-bold">
-            ME
-          </div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Oi, Maria Eduarda!</h1>
-          <p className="text-gray-600 mb-8">Pronta para ser a melhor aluna em matemática? 🚀</p>
-          <button 
-            onClick={loginWithGoogle}
-            className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 px-6 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2"
-          >
-            Entrar no Portal Mágico
-          </button>
-        </motion.div>
       </div>
     );
   }
@@ -314,19 +333,40 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button 
-              onClick={toggleMute}
+            <motion.button 
+              whileTap={{ scale: 0.9 }}
+              onClick={() => {
+                playEffect(SOUNDS.CLICK);
+                toggleMute();
+              }}
               className="p-2 hover:bg-pink-50 rounded-full text-pink-500 transition-colors"
               title={isMuted ? "Ativar som" : "Desativar som"}
             >
               {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-            </button>
-            <button 
-              onClick={() => signOut(auth)}
-              className="p-2 hover:bg-gray-100 rounded-full text-gray-500"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
+            </motion.button>
+            {!user ? (
+               <motion.button 
+                whileTap={{ scale: 0.9 }}
+                onClick={() => {
+                  playEffect(SOUNDS.CLICK);
+                  loginWithGoogle();
+                }}
+                className="px-4 py-1.5 bg-pink-100 text-pink-600 rounded-full text-xs font-bold hover:bg-pink-200"
+              >
+                Sincronizar
+              </motion.button>
+            ) : (
+              <motion.button 
+                whileTap={{ scale: 0.9 }}
+                onClick={() => {
+                  playEffect(SOUNDS.CLICK);
+                  signOut(auth);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-full text-gray-500"
+              >
+                <LogOut className="w-5 h-5" />
+              </motion.button>
+            )}
           </div>
         </div>
       </header>
@@ -364,12 +404,17 @@ export default function App() {
               })}
             </div>
 
-            <button 
-              onClick={closeSummary}
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                playEffect(SOUNDS.CLICK);
+                closeSummary();
+              }}
               className="bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 px-8 rounded-2xl transition-all shadow-lg"
             >
               Continuar Aprendendo
-            </button>
+            </motion.button>
           </motion.div>
         ) : showReviewList ? (
           <motion.div 
@@ -382,9 +427,12 @@ export default function App() {
                 <Repeat className="text-purple-500" /> Seus Reforços
               </h2>
               <button 
-                onClick={() => setShowReviewList(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
+  onClick={() => {
+    playEffect(SOUNDS.CLICK);
+    setShowReviewList(false);
+  }}
+  className="text-gray-400 hover:text-gray-600"
+>
                 Voltar
               </button>
             </div>
@@ -397,13 +445,14 @@ export default function App() {
                 if (!ex) return null;
                 return (
                   <button 
-                    key={id}
-                    onClick={() => {
-                      setIsReviewing(true);
-                      startExercise(ex);
-                    }}
-                    className="w-full p-4 rounded-2xl border-2 border-purple-100 hover:border-purple-300 hover:bg-purple-50 transition-all text-left flex items-center justify-between group"
-                  >
+  key={id}
+  onClick={() => {
+    playEffect(SOUNDS.CLICK);
+    setIsReviewing(true);
+    startExercise(ex);
+  }}
+  className="w-full p-4 rounded-2xl border-2 border-purple-100 hover:border-purple-300 hover:bg-purple-50 transition-all text-left flex items-center justify-between group"
+>
                     <div>
                       <p className="font-bold text-gray-800 text-sm tracking-tight">{ex.question}</p>
                       <p className="text-[10px] uppercase font-bold text-purple-400 mt-1">{ex.category}</p>
@@ -424,9 +473,12 @@ export default function App() {
                 </h3>
                 {profile && profile.wrongExerciseIds && profile.wrongExerciseIds.length > 0 && (
                   <button 
-                    onClick={() => selectExercise('review')}
-                    className="bg-purple-100 text-purple-700 font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-2 hover:bg-purple-200 transition-colors shadow-sm border border-purple-200"
-                  >
+  onClick={() => {
+    playEffect(SOUNDS.CLICK);
+    selectExercise('review');
+  }}
+  className="bg-purple-100 text-purple-700 font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-2 hover:bg-purple-200 transition-colors shadow-sm border border-purple-200"
+>
                     <Repeat className="w-4 h-4" /> Exercício a ser melhorado
                   </button>
                 )}
@@ -440,10 +492,13 @@ export default function App() {
                   const missing = Math.max(0, reward.level - totalSolved);
                   
                   return (
-                    <div 
+                    <motion.div 
                       key={i} 
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => playEffect(SOUNDS.CLICK)}
                       className={cn(
-                        "p-4 rounded-2xl text-center border-2 transition-all relative overflow-hidden",
+                        "p-3 sm:p-4 rounded-2xl text-center border-2 transition-all relative overflow-hidden cursor-pointer h-full flex flex-col items-center justify-between",
                         isLocked ? "bg-gray-100 border-gray-200 opacity-80" : "bg-white border-pink-200 shadow-md ring-2 ring-pink-100"
                       )}
                     >
@@ -465,7 +520,7 @@ export default function App() {
                         </div>
                       )}
                       {!isLocked && <div className="absolute top-1 right-1"><CheckCircle2 className="w-4 h-4 text-green-500 fill-white" /></div>}
-                    </div>
+                    </motion.div>
                   );
                 })}
               </div>
@@ -481,19 +536,24 @@ export default function App() {
                   }[cat.id === 'arithmetic' ? 'PlusMinus' : cat.id as any] || Plus;
                   
                   return (
-                    <button
+                    <motion.button
                       key={cat.id}
+                      whileHover={{ y: -5, shadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}
+                      whileTap={{ scale: 0.97 }}
                       onClick={() => selectExercise(cat.id)}
-                      className="bg-white p-6 rounded-3xl border-2 border-transparent hover:border-pink-300 shadow-sm hover:shadow-md transition-all text-left flex items-start gap-4"
+                      className="bg-white p-6 rounded-3xl border-2 border-transparent hover:border-pink-300 shadow-sm transition-all text-left flex items-start gap-4 min-h-[100px]"
                     >
-                      <div className="bg-pink-100 p-3 rounded-2xl text-pink-600">
+                      <div className="bg-pink-100 p-3 rounded-2xl text-pink-600 flex-shrink-0">
                         <Icon strokeWidth={2.5} />
                       </div>
                       <div>
-                        <h4 className="font-bold text-lg">{cat.name}</h4>
-                        <p className="text-sm text-gray-500">Nível: {profile?.levels[cat.id] || 0}</p>
+                        <h4 className="font-bold text-lg leading-tight">{cat.name}</h4>
+                        <p className="text-sm text-gray-500 mt-1 flex items-center gap-1">
+                          <Trophy className="w-3 h-3 text-yellow-500" />
+                          Nível {profile?.levels[cat.id] || 0}
+                        </p>
                       </div>
-                    </button>
+                    </motion.button>
                   );
                 })}
               </div>
@@ -522,46 +582,52 @@ export default function App() {
               </div>
 
               {/* Story */}
-              <div className="bg-pink-50 p-6 rounded-2xl mb-6 relative">
+              <div className="bg-pink-50 p-6 rounded-2xl mb-6 relative group overflow-hidden border-2 border-pink-100">
                 {currentExercise.narrativePaths && selectedPathIndex === null ? (
                   <div>
-                    <p className="text-lg font-bold text-pink-600 mb-4">O que a Maria deve fazer agora?</p>
+                    <div className="flex items-center gap-2 mb-4">
+                      <p className="text-lg font-extrabold text-pink-600">O que a Maria deve fazer agora?</p>
+                    </div>
                     <div className="grid grid-cols-1 gap-3">
                       {currentExercise.narrativePaths.map((path, idx) => (
-                        <button
+                        <motion.button
                           key={idx}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
                           onClick={() => {
                             setSelectedPathIndex(idx);
                             playEffect(SOUNDS.CLICK);
                           }}
-                          className="bg-white p-4 rounded-xl border-2 border-pink-200 hover:border-pink-500 hover:bg-pink-100 transition-all text-left font-medium flex items-center justify-between group"
+                          className="bg-white p-5 rounded-xl border-2 border-pink-200 hover:border-pink-500 hover:bg-pink-100 transition-all text-left font-medium flex items-center justify-between group min-h-[64px]"
                         >
-                          {path.choice}
-                          <ChevronRight className="w-5 h-5 text-pink-400 group-hover:translate-x-1 transition-transform" />
-                        </button>
+                          <span className="flex-1">{path.choice}</span>
+                          <ChevronRight className="w-5 h-5 text-pink-400 group-hover:translate-x-1 transition-transform ml-2" />
+                        </motion.button>
                       ))}
                     </div>
                   </div>
                 ) : (
-                  <>
+                  <div className="relative group overflow-hidden">
                     <p className="text-lg leading-relaxed italic text-gray-700">
                       "{selectedPathIndex !== null && currentExercise.narrativePaths 
                         ? currentExercise.narrativePaths[selectedPathIndex].storySegment 
                         : currentExercise.story}"
                     </p>
                     <div className="absolute -bottom-2 -left-2 w-4 h-4 bg-pink-50 rotate-45" />
-                  </>
+                  </div>
                 )}
               </div>
 
               {/* Only show question if no choices needed or choice made */}
               {( !currentExercise.narrativePaths || selectedPathIndex !== null ) && (
                 <>
-                  <h2 className="text-2xl font-bold mb-8">
-                    {selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].questionOverride 
-                      ? currentExercise.narrativePaths[selectedPathIndex].questionOverride 
-                      : currentExercise.question}
-                  </h2>
+                  <div className="flex items-start justify-between gap-4 mb-8">
+                    <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
+                      {selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].questionOverride 
+                        ? currentExercise.narrativePaths[selectedPathIndex].questionOverride 
+                        : currentExercise.question}
+                    </h2>
+                  </div>
 
                   <div className="space-y-4">
                     {(selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].optionsOverride 
@@ -572,26 +638,31 @@ export default function App() {
                           : currentExercise.correctOption;
 
                         return (
-                          <button
+                          <motion.button
                             key={i}
+                            whileHover={{ x: 5 }}
+                            whileTap={{ scale: 0.98 }}
                             disabled={!!feedback}
-                            onClick={() => handleAnswer(option)}
+                            onClick={() => {
+                              playEffect(SOUNDS.CLICK);
+                              handleAnswer(option);
+                            }}
                             className={cn(
-                              "w-full p-4 text-left rounded-2xl border-2 font-bold text-lg transition-all",
+                              "w-full p-5 text-left rounded-2xl border-2 font-bold text-lg transition-all flex items-center min-h-[72px]",
                               feedback?.isCorrect && option === correctOpt
                                 ? "bg-green-100 border-green-500 text-green-700"
                                 : feedback && !feedback.isCorrect && option === correctOpt
                                 ? "border-green-300"
                                 : feedback && !feedback.isCorrect && option !== correctOpt
                                 ? "bg-red-50 border-gray-200 opacity-50"
-                                : "border-gray-100 hover:border-pink-300 hover:bg-pink-50"
+                                : "border-gray-100 hover:border-pink-300 hover:bg-pink-50 shadow-sm"
                             )}
                           >
-                            <span className="inline-block w-8 h-8 rounded-full bg-gray-100 text-center leading-8 mr-3 text-sm">
+                            <span className="inline-block w-10 h-10 rounded-full bg-gray-100 text-center leading-10 mr-4 text-sm flex-shrink-0">
                               {String.fromCharCode(65 + i)}
                             </span>
-                            {option}
-                          </button>
+                            <span className="flex-1">{option}</span>
+                          </motion.button>
                         );
                       })}
                   </div>
@@ -697,22 +768,24 @@ export default function App() {
       {/* Quick Stats Bar (bottom) */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-3 shadow-2xl">
         <div className="max-w-4xl mx-auto flex items-center justify-around text-xs font-bold uppercase tracking-wider text-gray-500">
-          <div className="text-center">
-            <p className="text-pink-500 text-lg">{profile?.points || 0}</p>
-            <p>Pontos</p>
-          </div>
-          <div className="text-center">
-            <p className="text-blue-500 text-lg">
-              {profile ? (Object.values(profile.levels) as number[]).reduce((a, b) => a + b, 0) : 0}
-            </p>
-            <p>Desafios</p>
-          </div>
-          <div className="text-center">
-            <p className="text-yellow-500 text-lg">
-              {profile?.unlockedRewards.length || 0}
-            </p>
-            <p>Prêmios</p>
-          </div>
+            <div className="flex gap-4 sm:gap-6 justify-center">
+              <div className="text-center">
+                <p className="text-pink-500 text-xl sm:text-2xl font-black">{profile?.points || 0}</p>
+                <p className="text-[10px] sm:text-xs">Pontos</p>
+              </div>
+              <div className="text-center">
+                <p className="text-blue-500 text-xl sm:text-2xl font-black">
+                  {profile ? (Object.values(profile.levels) as number[]).reduce((a, b) => a + b, 0) : 0}
+                </p>
+                <p className="text-[10px] sm:text-xs">Desafios</p>
+              </div>
+              <div className="text-center">
+                <p className="text-yellow-500 text-xl sm:text-2xl font-black">
+                  {profile?.unlockedRewards.length || 0}
+                </p>
+                <p className="text-[10px] sm:text-xs">Prêmios</p>
+              </div>
+            </div>
         </div>
       </div>
     </div>
