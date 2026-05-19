@@ -5,6 +5,7 @@ import {
   ChevronRight, ChevronLeft, CheckCircle2, XCircle, LogOut, Loader2,
   Volume2, VolumeX
 } from 'lucide-react';
+// Force rebuild check: v1.1.0
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   onAuthStateChanged, 
@@ -20,14 +21,39 @@ import {
   query, 
   where, 
   getDocs,
+  addDoc,
   serverTimestamp
 } from 'firebase/firestore';
 import { auth, db, loginWithGoogle } from './lib/firebase';
 import { cn } from './lib/utils';
 import { VictoryCelebration } from './components/VictoryCelebration';
 import { EXERCISES } from './data/exercises';
-import { CATEGORIES, REWARDS, Category, Exercise, UserProfile } from './types';
+import { CATEGORIES, REWARDS, Category, Exercise, UserProfile, Exam, ExamResult } from './types';
 import { playSound, SOUNDS } from './lib/audio';
+import { EXAMS } from './data/exams';
+
+function handleFirestoreError(error: any, operationType: string, path: string) {
+  const errInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+}
+
+const ICON_MAP = {
+  ArrowUpDown,
+  Circle,
+  Repeat,
+  PlusMinus: Minus,
+  Box,
+  Hash
+};
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -38,6 +64,7 @@ export default function App() {
   const [currentExercise, setCurrentExercise] = useState<Exercise | null>(null);
   const [feedback, setFeedback] = useState<{ isCorrect: boolean; message: string } | null>(null);
   const [showVictory, setShowVictory] = useState(false);
+  const [showPrizeMilestone, setShowPrizeMilestone] = useState<string | null>(null);
   const [showDidacticIntro, setShowDidacticIntro] = useState(false);
   const [exerciseForIntro, setExerciseForIntro] = useState<Exercise | null>(null);
   const [selectedCategoryForList, setSelectedCategoryForList] = useState<Category | null>(null);
@@ -47,9 +74,15 @@ export default function App() {
   const [sessionResults, setSessionResults] = useState<{ id: string; correct: boolean }[]>([]);
   const [showSummary, setShowSummary] = useState(false);
   const [showReviewList, setShowReviewList] = useState(false);
+  const [showCategoryIntro, setShowCategoryIntro] = useState<{ id: Category; name: string; intro: string } | null>(null);
   const [selectedPathIndex, setSelectedPathIndex] = useState<number | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [activeTab, setActiveTab] = useState<'study' | 'exams' | 'profile'>('study');
+  const [currentExam, setCurrentExam] = useState<Exam | null>(null);
+  const [currentExamQuestionIndex, setCurrentExamQuestionIndex] = useState(0);
+  const [examAnswers, setExamAnswers] = useState<{ id: string; correct: boolean }[]>([]);
+  const [showExamResult, setShowExamResult] = useState(false);
 
   const toggleMute = () => setIsMuted(prev => !prev);
 
@@ -132,9 +165,89 @@ export default function App() {
     }
   };
 
+  const startExam = (exam: Exam) => {
+    playEffect(SOUNDS.CLICK);
+    setCurrentExam(exam);
+    setCurrentExamQuestionIndex(0);
+    setExamAnswers([]);
+    setShowExamResult(false);
+    
+    // Start with first exercise of exam
+    const firstExId = exam.exerciseIds[0];
+    const firstEx = EXERCISES.find(e => e.id === firstExId);
+    if (firstEx) {
+      setCurrentExercise(firstEx);
+      setFeedback(null);
+      setAiResponse(null);
+    }
+  };
+
+  const handleExamAnswer = async (option: string) => {
+    if (!currentExercise || !currentExam || feedback) return;
+    
+    const isCorrect = option === currentExercise.correctOption;
+    const newAnswers = [...examAnswers, { id: currentExercise.id, correct: isCorrect }];
+    setExamAnswers(newAnswers);
+    
+    if (isCorrect) {
+      playEffect(SOUNDS.SUCCESS);
+      setFeedback({ isCorrect: true, message: "Boa! Continue assim na prova! ✨" });
+    } else {
+      playEffect(SOUNDS.ERROR);
+      setFeedback({ isCorrect: false, message: "Essa era difícil! Vamos para a próxima." });
+    }
+
+    setTimeout(async () => {
+      setFeedback(null);
+      const nextIndex = currentExamQuestionIndex + 1;
+      if (nextIndex < currentExam.exerciseIds.length) {
+        setCurrentExamQuestionIndex(nextIndex);
+        const nextExId = currentExam.exerciseIds[nextIndex];
+        const nextEx = EXERCISES.find(e => e.id === nextExId);
+        if (nextEx) {
+          setCurrentExercise(nextEx);
+        }
+      } else {
+        // Exam finished
+        setShowExamResult(true);
+        playEffect(SOUNDS.TROPHY);
+        
+        // Save result
+        const score = newAnswers.filter(a => a.correct).length;
+        const newResult: ExamResult = {
+          examId: currentExam.id,
+          score,
+          completedAt: new Date().toISOString()
+        };
+        
+        const uid = user?.uid || GUEST_UID;
+        const updatedProfile = { 
+          ...profile!, 
+          examResults: [...(profile!.examResults || []), newResult],
+          points: profile!.points + (score * 5) // Bonus for exams
+        };
+        setProfile(updatedProfile);
+        localStorage.setItem(`profile_${uid}`, JSON.stringify(updatedProfile));
+        
+        if (user) {
+          try {
+            await updateDoc(doc(db, 'users', user.uid), updatedProfile);
+          } catch (e) {
+            handleFirestoreError(e, 'update', `users/${user.uid}`);
+          }
+        }
+      }
+    }, 2000);
+  };
+
   const handleAnswer = async (option: string) => {
+    if (currentExam) {
+      handleExamAnswer(option);
+      return;
+    }
     if (!currentExercise || feedback || !profile) return;
     const uid = user?.uid || GUEST_UID;
+    const isGuest = !user;
 
     const correctOption = (selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].correctOptionOverride) 
       || currentExercise.correctOption;
@@ -145,13 +258,16 @@ export default function App() {
     if (isCorrect) {
       playEffect(SOUNDS.SUCCESS);
       setShowVictory(true);
-      setTimeout(() => setShowVictory(false), 4000);
-      const msg = "Parabéns, Maria Eduarda! Você acertou! 🌟";
-      setFeedback({ isCorrect: true, message: msg });
+      
+      const milestonePoints = [50, 100, 250, 500, 1000];
+      const oldPoints = profile.points;
+      const newPoints = oldPoints + 10;
+      
+      const reachedMilestone = milestonePoints.find(m => oldPoints < m && newPoints >= m);
       
       // Update progress
-      const newPoints = profile.points + 10;
-      const newLevels = { ...profile.levels, [currentExercise.category]: profile.levels[currentExercise.category] + 1 };
+      const currentLevel = profile.levels[currentExercise.category] || 0;
+      const newLevels = { ...profile.levels, [currentExercise.category]: currentLevel + 1 };
       
       // Remove from wrong ids if it was there
       const newWrongIds = (profile.wrongExerciseIds || []).filter(id => id !== currentExercise.id);
@@ -160,9 +276,11 @@ export default function App() {
       const totalSolved = (Object.values(newLevels) as number[]).reduce((a, b) => a + b, 0);
       const newRewards = [...profile.unlockedRewards];
       
+      let newPrizeName = "";
       REWARDS.forEach(r => {
         if (totalSolved >= r.level && !newRewards.includes(r.name)) {
           newRewards.push(r.name);
+          newPrizeName = r.name;
         }
       });
 
@@ -170,16 +288,33 @@ export default function App() {
       setProfile(updatedProfile);
       localStorage.setItem(`profile_${uid}`, JSON.stringify(updatedProfile));
       
-      try {
-        await updateDoc(doc(db, 'users', uid), updatedProfile);
-        await setDoc(doc(collection(db, 'progress')), {
-          userId: uid,
-          exerciseId: currentExercise.id,
-          completed: true,
-          timestamp: serverTimestamp()
-        });
-      } catch (error) {
-        console.error("Error updating progress:", error);
+      if (reachedMilestone || newPrizeName) {
+        setShowPrizeMilestone(newPrizeName || `MARCO DE ${newPoints} PONTOS!`);
+        playEffect(SOUNDS.TROPHY);
+      }
+
+      setFeedback({ isCorrect: true, message: "Parabéns, Maria Eduarda! Você acertou! 🌟" });
+      
+      // AUTO-ADVANCE logic
+      setTimeout(() => {
+        setShowVictory(false);
+        if (!reachedMilestone && !newPrizeName) {
+          handleNextExerciseProgress();
+        }
+      }, reachedMilestone || newPrizeName ? 5000 : 3000);
+
+      if (!isGuest && user) {
+        try {
+          await updateDoc(doc(db, 'users', user.uid), updatedProfile);
+          await addDoc(collection(db, 'progress'), {
+            userId: user.uid,
+            exerciseId: currentExercise.id,
+            completed: true,
+            timestamp: serverTimestamp()
+          });
+        } catch (error) {
+          handleFirestoreError(error, 'write', 'progress/users');
+        }
       }
     } else {
       playEffect(SOUNDS.ERROR);
@@ -192,10 +327,12 @@ export default function App() {
       setProfile(updatedProfile);
       localStorage.setItem(`profile_${uid}`, JSON.stringify(updatedProfile));
       
-      try {
-        await updateDoc(doc(db, 'users', uid), { wrongExerciseIds: newWrongIds });
-      } catch (e) {
-        console.error("Error updating wrong exercises:", e);
+      if (!isGuest && user) {
+        try {
+          await updateDoc(doc(db, 'users', user.uid), { wrongExerciseIds: newWrongIds });
+        } catch (e) {
+          handleFirestoreError(e, 'update', `users/${user.uid}`);
+        }
       }
 
       const storyText = selectedPathIndex !== null && currentExercise.narrativePaths 
@@ -241,6 +378,14 @@ export default function App() {
 
   const handleGoHome = () => {
     playEffect(SOUNDS.CLICK);
+    if (currentExam) {
+      if (confirm("Você quer mesmo sair da prova? Seu progresso será perdido.")) {
+        setCurrentExam(null);
+        setCurrentExercise(null);
+        setFeedback(null);
+      }
+      return;
+    }
     if (sessionResults.length > 0) {
       setShowSummary(true);
       playEffect(SOUNDS.TROPHY);
@@ -266,6 +411,28 @@ export default function App() {
     setShowReviewList(false);
   };
 
+  const handleNextExerciseProgress = () => {
+    if (!currentExercise || !profile) return;
+    const categoryExercises = EXERCISES.filter(e => {
+        if (currentExercise.category === 'order') return e.id.startsWith('helena-');
+        if (currentExercise.category === 'rounding') return e.id.startsWith('round-h-');
+        return e.category === currentExercise.category;
+    });
+    const nextIndex = profile.levels[currentExercise.category] % categoryExercises.length;
+    const nextEx = categoryExercises[nextIndex];
+    if (nextEx) {
+      startExercise(nextEx);
+    } else {
+      handleGoHome();
+    }
+  };
+
+  const closePrizeMilestone = () => {
+    playEffect(SOUNDS.CLICK);
+    setShowPrizeMilestone(null);
+    handleNextExerciseProgress();
+  };
+
   const startExercise = (exercise: Exercise) => {
     if (exercise.didacticExplanation || exercise.curiosity || exercise.didacticStory) {
       setExerciseForIntro(exercise);
@@ -285,14 +452,32 @@ export default function App() {
     playEffect(SOUNDS.CLICK);
     if (category === 'review') {
       const wrongIds = profile?.wrongExerciseIds || [];
-      if (wrongIds.length === 0) {
-        console.warn("Nenhum exercício para reforço no momento!");
-        return;
-      }
+      if (wrongIds.length === 0) return;
       setShowReviewList(true);
       setCurrentExercise(null);
     } else {
-      setSelectedCategoryForList(category);
+      const categoryId = category as Category;
+      const categoryData = CATEGORIES.find(c => c.id === categoryId);
+      
+      if (categoryData?.intro) {
+          setShowCategoryIntro({ 
+            id: categoryId, 
+            name: categoryData.name, 
+            intro: categoryData.intro 
+          });
+          return;
+      }
+
+      const categoryExercises = EXERCISES.filter(e => {
+        if (categoryId === 'order') return e.id.startsWith('helena-');
+        if (categoryId === 'rounding') return e.id.startsWith('round-h-');
+        return e.category === categoryId;
+      });
+      const userLevel = profile?.levels[categoryId] || 0;
+      const nextEx = categoryExercises[userLevel % categoryExercises.length];
+      if (nextEx) {
+        startExercise(nextEx);
+      }
     }
   };
 
@@ -308,6 +493,108 @@ export default function App() {
     <div className="min-h-screen bg-pink-50 font-sans text-gray-800 pb-20">
       <AnimatePresence>
         {showVictory && <VictoryCelebration />}
+        
+        {showCategoryIntro && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] bg-pink-600/90 backdrop-blur-xl flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white rounded-[4rem] p-10 max-w-2xl w-full shadow-2xl border-[12px] border-yellow-400 relative overflow-hidden flex flex-col items-center"
+            >
+              <div className="w-24 h-24 bg-pink-100 rounded-3xl flex items-center justify-center text-pink-500 mb-8">
+                {(() => {
+                  const cat = CATEGORIES.find(c => c.id === showCategoryIntro.id);
+                  const Icon = ICON_MAP[cat?.icon as keyof typeof ICON_MAP] || Box;
+                  return <Icon className="w-12 h-12" />;
+                })()}
+              </div>
+              
+              <h2 className="text-3xl font-black text-gray-900 mb-6 text-center uppercase tracking-tight">
+                {showCategoryIntro.name}
+              </h2>
+              
+              <div className="bg-pink-50 rounded-[2.5rem] p-8 mb-8 border-2 border-pink-100 shadow-inner overflow-y-auto max-h-[40vh]">
+                <p className="text-lg font-medium text-gray-700 leading-relaxed whitespace-pre-wrap text-center italic">
+                  "{showCategoryIntro.intro}"
+                </p>
+              </div>
+              
+              <button
+                onClick={() => {
+                  const categoryId = showCategoryIntro.id;
+                  setShowCategoryIntro(null);
+                  playEffect(SOUNDS.CLICK);
+                  
+                  const categoryExercises = EXERCISES.filter(e => {
+                    if (categoryId === 'order') return e.id.startsWith('helena-');
+                    if (categoryId === 'rounding') return e.id.startsWith('round-h-');
+                    return e.category === categoryId;
+                  });
+                  const userLevel = profile?.levels[categoryId] || 0;
+                  const nextEx = categoryExercises[userLevel % categoryExercises.length];
+                  if (nextEx) {
+                    startExercise(nextEx);
+                  }
+                }}
+                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-black py-6 rounded-[2.5rem] shadow-2xl text-2xl transition-all hover:scale-105 active:scale-95 border-b-8 border-pink-700 flex items-center justify-center gap-3"
+              >
+                COMEÇAR AVENTURA! <ChevronRight className="w-8 h-8" />
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+        
+        {showPrizeMilestone && (
+          <motion.div
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-pink-600/60 backdrop-blur-xl"
+          >
+            <div className="bg-white rounded-[4rem] p-12 shadow-[0_35px_60px_-15px_rgba(0,0,0,0.3)] max-w-xl w-full text-center border-[12px] border-yellow-400 relative overflow-hidden">
+               <motion.div 
+                animate={{ rotate: 360 }}
+                transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+                className="absolute -top-32 -right-32 w-80 h-80 bg-yellow-100 rounded-full opacity-30"
+              />
+              <motion.div 
+                animate={{ rotate: -360 }}
+                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                className="absolute -bottom-32 -left-32 w-80 h-80 bg-pink-100 rounded-full opacity-30"
+              />
+              
+              <motion.div
+                animate={{ y: [0, -20, 0] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                <Trophy className="w-32 h-32 text-yellow-500 mx-auto mb-8 drop-shadow-[0_10px_10px_rgba(0,0,0,0.1)]" />
+              </motion.div>
+              
+              <h2 className="text-5xl font-black text-gray-900 mb-6 tracking-tight leading-tight uppercase">
+                VOCÊ É INCRÍVEL! 🌟
+              </h2>
+              
+              <div className="bg-gradient-to-br from-yellow-50 to-orange-50 p-8 rounded-[3rem] border-4 border-yellow-200 mb-10 shadow-inner">
+                <p className="text-3xl font-black text-pink-600 uppercase break-words">
+                  {showPrizeMilestone}
+                </p>
+              </div>
+              
+              <button
+                onClick={closePrizeMilestone}
+                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-black py-6 rounded-[2.5rem] shadow-2xl text-2xl transition-all hover:scale-105 active:scale-95 border-b-8 border-pink-700"
+              >
+                VAMOS CONTINUAR! 🚀
+              </button>
+            </div>
+          </motion.div>
+        )}
+
         {showDidacticIntro && exerciseForIntro && (
           <motion.div 
             initial={{ opacity: 0 }}
@@ -405,6 +692,45 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Bottom Navigation */}
+      {!currentExercise && !showDidacticIntro && !showSummary && !showReviewList && !showCategoryIntro && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-pink-100 px-6 py-3 z-50 flex justify-around items-center">
+          <button 
+            onClick={() => setActiveTab('study')}
+            className={cn(
+              "flex flex-col items-center gap-1 transition-colors",
+              activeTab === 'study' ? "text-pink-600" : "text-gray-400"
+            )}
+          >
+            <Book className="w-6 h-6" />
+            <span className="text-[10px] font-bold uppercase">Estudar</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('exams')}
+            className={cn(
+              "flex flex-col items-center gap-1 transition-colors relative",
+              activeTab === 'exams' ? "text-pink-600" : "text-gray-400"
+            )}
+          >
+            <Star className="w-6 h-6" />
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center text-[8px] font-bold text-white border border-white">
+              3
+            </div>
+            <span className="text-[10px] font-bold uppercase">Provas</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('profile')}
+            className={cn(
+              "flex flex-col items-center gap-1 transition-colors",
+              activeTab === 'profile' ? "text-pink-600" : "text-gray-400"
+            )}
+          >
+            <Trophy className="w-6 h-6" />
+            <span className="text-[10px] font-bold uppercase">Prêmios</span>
+          </button>
+        </nav>
+      )}
 
       <header className="bg-white border-b border-pink-100 p-4 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -551,6 +877,48 @@ export default function App() {
               })}
             </div>
           </motion.div>
+        ) : showExamResult ? (
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-[3rem] p-10 shadow-2xl max-w-2xl mx-auto text-center border-4 border-yellow-400"
+          >
+            <div className="w-24 h-24 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Trophy className="w-12 h-12 text-yellow-600" />
+            </div>
+            <h2 className="text-4xl font-black mb-4">Prova Final Concluída!</h2>
+            <div className="bg-pink-50 rounded-2xl p-6 mb-8 inline-block px-12 border-2 border-pink-100">
+              <p className="text-xl font-bold text-gray-500 uppercase tracking-widest mb-2">Sua Nota</p>
+              <p className="text-6xl font-black text-pink-600">
+                {examAnswers.filter(a => a.correct).length * 10}
+              </p>
+              <p className="text-gray-400 font-bold mt-2">de 100 pontos</p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 mb-10">
+              <div className="bg-green-50 p-4 rounded-2xl border-2 border-green-100">
+                <p className="text-2xl font-black text-green-600">{examAnswers.filter(a => a.correct).length}</p>
+                <p className="text-xs font-bold text-green-800 uppercase">Acertos</p>
+              </div>
+              <div className="bg-red-50 p-4 rounded-2xl border-2 border-red-100">
+                <p className="text-2xl font-black text-red-600">{examAnswers.filter(a => !a.correct).length}</p>
+                <p className="text-xs font-bold text-red-800 uppercase">Erros</p>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => {
+                playEffect(SOUNDS.CLICK);
+                setCurrentExam(null);
+                setCurrentExercise(null);
+                setShowExamResult(false);
+                setExamAnswers([]);
+              }}
+              className="w-full bg-pink-500 hover:bg-pink-600 text-white font-black py-5 rounded-3xl shadow-xl text-xl transition-all hover:scale-[1.02]"
+            >
+              Voltar para o Início
+            </button>
+          </motion.div>
         ) : selectedCategoryForList ? (
           <motion.div 
             initial={{ x: 50, opacity: 0 }}
@@ -618,99 +986,199 @@ export default function App() {
           </motion.div>
         ) : !currentExercise ? (
           <div className="space-y-8">
-            {/* Progress Overview */}
-            <section>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold flex items-center gap-2">
-                  <Trophy className="text-yellow-500" /> Suas Conquistas
-                </h3>
-                {profile && profile.wrongExerciseIds && profile.wrongExerciseIds.length > 0 && (
-                  <button 
-  onClick={() => {
-    playEffect(SOUNDS.CLICK);
-    selectExercise('review');
-  }}
-  className="bg-purple-100 text-purple-700 font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-2 hover:bg-purple-200 transition-colors shadow-sm border border-purple-200"
->
-                    <Repeat className="w-4 h-4" /> Exercício a ser melhorado
-                  </button>
-                )}
-              </div>
-              
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {REWARDS.map((reward, i) => {
-                  const totalSolved = profile ? (Object.values(profile.levels) as number[]).reduce((a, b) => a + b, 0) : 0;
-                  const isLocked = totalSolved < reward.level;
-                  const progress = Math.min(100, (totalSolved / reward.level) * 100);
-                  const missing = Math.max(0, reward.level - totalSolved);
-                  
-                  return (
-                    <motion.div 
-                      key={i} 
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => playEffect(SOUNDS.CLICK)}
-                      className={cn(
-                        "p-3 sm:p-4 rounded-2xl text-center border-2 transition-all relative overflow-hidden cursor-pointer h-full flex flex-col items-center justify-between",
-                        isLocked ? "bg-gray-100 border-gray-200 opacity-80" : "bg-white border-pink-200 shadow-md ring-2 ring-pink-100"
-                      )}
-                    >
-                      <div className="flex justify-center mb-2">
-                        {reward.name.includes("YouTube") && <Youtube className={isLocked ? "text-gray-400" : "text-red-500"} />}
-                        {reward.name.includes("livro") && <Book className={isLocked ? "text-gray-400" : "text-blue-500"} />}
-                        {reward.name.includes("Vovó") && <Home className={isLocked ? "text-gray-400" : "text-green-500"} />}
-                        {reward.name.includes("descanso") && <Gift className={isLocked ? "text-gray-400" : "text-purple-500"} />}
-                      </div>
-                      <p className="text-[10px] font-bold uppercase text-gray-400 mb-1">{reward.category}</p>
-                      <p className="text-xs font-bold leading-tight mb-2">{reward.name}</p>
+            {activeTab === 'study' && (
+              <>
+                {/* Progress Overview - STUDY TAB */}
+                <section>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold flex items-center gap-2">
+                      <Book className="text-pink-500" /> Pratique e Aprenda
+                    </h3>
+                  </div>
+                  {/* Category Grid - Moved here */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {CATEGORIES.map((cat) => {
+                      const Icon = ICON_MAP[cat.icon as keyof typeof ICON_MAP] || Box;
+                      const level = profile.levels[cat.id] || 0;
+                      const categoryExercises = EXERCISES.filter(e => {
+                        if (cat.id === 'order') return e.id.startsWith('helena-');
+                        if (cat.id === 'rounding') return e.id.startsWith('round-h-');
+                        return e.category === cat.id;
+                      });
+                      const isCompleted = level >= categoryExercises.length;
                       
-                      {isLocked && (
-                        <div className="mt-auto">
-                          <div className="w-full bg-gray-200 h-1.5 rounded-full mb-1">
-                            <div className="bg-pink-500 h-full rounded-full" style={{ width: `${progress}%` }} />
+                      return (
+                        <motion.button
+                          key={cat.id}
+                          whileHover={{ y: -8, scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => selectExercise(cat.id)}
+                          className={cn(
+                            "relative overflow-hidden group p-8 rounded-[2.5rem] text-left transition-all border-b-8 active:border-b-0 active:translate-y-2",
+                            isCompleted 
+                              ? "bg-green-50 border-green-200" 
+                              : "bg-white border-pink-100 hover:border-pink-200 shadow-xl shadow-pink-500/5 shadow-inner"
+                          )}
+                        >
+                          <div className="flex flex-col h-full gap-4 relative z-10">
+                            <div className={cn(
+                              "w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg",
+                              isCompleted ? "bg-green-500 text-white" : "bg-pink-500 text-white"
+                            )}>
+                              <Icon className="w-8 h-8" />
+                            </div>
+                            <div>
+                              <h4 className="text-xl font-black text-gray-800 leading-tight mb-1">
+                                {cat.name}
+                              </h4>
+                              <p className="text-sm font-bold text-gray-400 capitalize">
+                                {isCompleted ? "Completado! ✨" : `Nível ${level + 1}`}
+                              </p>
+                              <div className="mt-4 w-full h-3 bg-gray-100 rounded-full overflow-hidden border border-gray-100">
+                                 <motion.div 
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${Math.min(100, (level / categoryExercises.length) * 100)}%` }}
+                                  className={cn(
+                                    "h-full",
+                                    isCompleted ? "bg-green-500" : "bg-gradient-to-r from-pink-500 to-rose-400"
+                                  )}
+                                 />
+                              </div>
+                              <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-gray-300">
+                                {level} de {categoryExercises.length} desafios
+                              </p>
+                            </div>
                           </div>
-                          <p className="text-[10px] text-gray-500">Faltam {missing} exercícios</p>
-                        </div>
-                      )}
-                      {!isLocked && <div className="absolute top-1 right-1"><CheckCircle2 className="w-4 h-4 text-green-500 fill-white" /></div>}
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </section>
+                          {isCompleted && (
+                            <div className="absolute top-4 right-4">
+                              <CheckCircle2 className="w-8 h-8 text-green-500 opacity-20" />
+                            </div>
+                          )}
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </section>
+                
+                {profile && profile.wrongExerciseIds && profile.wrongExerciseIds.length > 0 && (
+                  <section className="bg-purple-50 p-6 rounded-[2rem] border-2 border-purple-100 shadow-lg">
+                    <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 bg-purple-500 rounded-2xl flex items-center justify-center text-white shadow-md">
+                            <Repeat className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <h4 className="font-black text-purple-800">Seus Reforços</h4>
+                            <p className="text-xs font-bold text-purple-400 uppercase">Aprenda com seus erros</p>
+                          </div>
+                       </div>
+                       <button 
+                         onClick={() => selectExercise('review')}
+                         className="px-6 py-2 bg-purple-600 text-white rounded-full font-black text-xs hover:bg-purple-700 transition-colors shadow-lg"
+                       >
+                         PRATICAR AGORA
+                       </button>
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
 
-            {/* Categories */}
-            <section>
-              <h3 className="text-xl font-bold mb-4">Escolha seu Desafio</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {CATEGORIES.map((cat) => {
-                  const Icon = {
-                    ArrowUpDown, Circle, Repeat, PlusMinus: Minus, Box, Hash
-                  }[cat.id === 'arithmetic' ? 'PlusMinus' : cat.id as any] || Plus;
-                  
-                  return (
-                    <motion.button
-                      key={cat.id}
-                      whileHover={{ y: -5, shadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}
-                      whileTap={{ scale: 0.97 }}
-                      onClick={() => selectExercise(cat.id)}
-                      className="bg-white p-6 rounded-3xl border-2 border-transparent hover:border-pink-300 shadow-sm transition-all text-left flex items-start gap-4 min-h-[100px]"
-                    >
-                      <div className="bg-pink-100 p-3 rounded-2xl text-pink-600 flex-shrink-0">
-                        <Icon strokeWidth={2.5} />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-lg leading-tight">{cat.name}</h4>
-                        <p className="text-sm text-gray-500 mt-1 flex items-center gap-1">
-                          <Trophy className="w-3 h-3 text-yellow-500" />
-                          Nível {profile?.levels[cat.id] || 0}
-                        </p>
-                      </div>
-                    </motion.button>
-                  );
-                })}
-              </div>
-            </section>
+            {activeTab === 'exams' && (
+              <section className="space-y-6">
+                <div className="bg-yellow-400 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
+                  <motion.div 
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                    className="absolute -top-20 -right-20 w-64 h-64 bg-white/20 rounded-full blur-3xl"
+                  />
+                  <div className="relative z-10">
+                    <h2 className="text-4xl font-black mb-4 uppercase tracking-tighter">Prova Final</h2>
+                    <p className="text-lg font-bold text-yellow-900 leading-relaxed mb-6">
+                      Atenção, Maria Eduarda! As provas finais chegaram. <br/>
+                      São 10 desafios de nível **COMPLEXO** para provar que você é uma mestre!
+                    </p>
+                    <div className="flex items-center gap-4">
+                       <div className="bg-white/30 px-6 py-2 rounded-full border border-white/40 flex items-center gap-2">
+                         <Star className="w-5 h-5 fill-white" />
+                         <span className="font-black">100% NÍVEL HARD</span>
+                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {EXAMS.map((exam, i) => {
+                    const result = profile.examResults?.find(r => r.examId === exam.id);
+                    return (
+                      <motion.div
+                        key={exam.id}
+                        whileHover={{ y: -5 }}
+                        className="bg-white p-6 rounded-[2.5rem] border-2 border-pink-50 shadow-xl flex flex-col justify-between"
+                      >
+                        <div>
+                          <div className="w-12 h-12 bg-pink-100 rounded-2xl flex items-center justify-center text-pink-600 mb-4 font-black text-xl">
+                            {i+1}
+                          </div>
+                          <h4 className="font-black text-xl text-gray-800 mb-2 leading-tight">{exam.title}</h4>
+                          <p className="text-sm text-gray-500 font-medium mb-6 line-clamp-3">{exam.description}</p>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          {result && (
+                            <div className="flex items-center justify-between p-3 bg-green-50 rounded-2xl border border-green-100">
+                               <span className="text-[10px] font-black uppercase text-green-700">Melhor Nota</span>
+                               <span className="font-black text-green-600">{result.score * 10}</span>
+                            </div>
+                          )}
+                          
+                          <button
+                            onClick={() => startExam(exam)}
+                            className="w-full bg-pink-500 hover:bg-pink-600 text-white font-black py-4 rounded-3xl transition-all shadow-lg active:scale-95"
+                          >
+                            {result ? "REFAZER PROVA" : "INICIAR PROVA"}
+                          </button>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {activeTab === 'profile' && (
+              <section className="space-y-6">
+                <div className="bg-white rounded-[3rem] p-10 border-2 border-pink-50 shadow-2xl flex flex-col items-center">
+                   <div className="w-32 h-32 bg-pink-500 rounded-[2.5rem] flex items-center justify-center text-white text-5xl font-black mb-6 shadow-xl rotate-3">
+                     ME
+                   </div>
+                   <h2 className="text-3xl font-black text-gray-900 mb-2">Maria Eduarda</h2>
+                   <div className="bg-yellow-100 px-6 py-2 rounded-full border-2 border-yellow-200 flex items-center gap-2 mb-8">
+                     <Star className="w-5 h-5 fill-yellow-500 text-yellow-500" />
+                     <span className="font-black text-yellow-700">{profile.points} PONTOS MÁGICOS</span>
+                   </div>
+
+                   <div className="w-full grid grid-cols-1 gap-4">
+                      <h4 className="text-xl font-black text-gray-800 text-center mb-2">Seus Prêmios Desbloqueados</h4>
+                      {profile.unlockedRewards.length > 0 ? (
+                        profile.unlockedRewards.map((rewardName, idx) => (
+                           <div key={idx} className="bg-pink-50 p-4 rounded-2xl border-2 border-pink-100 flex items-center gap-4">
+                              <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center">
+                                <Gift className="text-pink-500" />
+                              </div>
+                              <div>
+                                <p className="font-black text-gray-800">{rewardName}</p>
+                                <p className="text-[10px] font-bold text-green-500 uppercase">PRONTO PARA USAR!</p>
+                              </div>
+                           </div>
+                        ))
+                      ) : (
+                        <p className="text-gray-400 text-center italic">Você ainda não desbloqueou prêmios. Continue estudando!</p>
+                      )}
+                   </div>
+                </div>
+              </section>
+            )}
           </div>
         ) : (
           <AnimatePresence mode="wait">
@@ -729,9 +1197,27 @@ export default function App() {
                 >
                   <Home className="w-4 h-4" /> Voltar
                 </button>
-                <span className="text-xs font-bold uppercase tracking-widest text-pink-400">
-                  Nível {profile?.levels[currentExercise.category] || 0}
-                </span>
+                {currentExam ? (
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] font-black uppercase text-yellow-500 mb-1">Prova em Andamento</span>
+                    <div className="flex items-center gap-1">
+                       {currentExam.exerciseIds.map((_, i) => (
+                         <div 
+                           key={i} 
+                           className={cn(
+                             "w-2 h-2 rounded-full",
+                             i < currentExamQuestionIndex ? "bg-green-400" :
+                             i === currentExamQuestionIndex ? "bg-pink-500 animate-pulse" : "bg-gray-200"
+                           )}
+                         />
+                       ))}
+                    </div>
+                  </div>
+                ) : (
+                  <span className="text-xs font-bold uppercase tracking-widest text-pink-400">
+                    Nível {profile?.levels[currentExercise.category] || 0}
+                  </span>
+                )}
               </div>
 
               {/* Story */}
@@ -771,10 +1257,10 @@ export default function App() {
                 )}
               </div>
 
-              {/* Only show question if no choices needed or choice made */}
+              {/* Options */}
               {( !currentExercise.narrativePaths || selectedPathIndex !== null ) && (
                 <>
-                  <div className="flex items-start justify-between gap-4 mb-8">
+                  <div className="flex items-start justify-between gap-4 mb-4">
                     <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
                       {selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].questionOverride 
                         ? currentExercise.narrativePaths[selectedPathIndex].questionOverride 
@@ -782,7 +1268,7 @@ export default function App() {
                     </h2>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-3 mb-8">
                     {(selectedPathIndex !== null && currentExercise.narrativePaths?.[selectedPathIndex].optionsOverride 
                       ? currentExercise.narrativePaths[selectedPathIndex].optionsOverride 
                       : currentExercise.options).map((option, i) => {
@@ -801,7 +1287,7 @@ export default function App() {
                               handleAnswer(option);
                             }}
                             className={cn(
-                              "w-full p-5 text-left rounded-2xl border-2 font-bold text-lg transition-all flex items-center min-h-[72px]",
+                              "w-full p-4 text-left rounded-2xl border-2 font-bold text-lg transition-all flex items-center min-h-[60px]",
                               feedback?.isCorrect && option === correctOpt
                                 ? "bg-green-100 border-green-500 text-green-700"
                                 : feedback && !feedback.isCorrect && option === correctOpt
@@ -811,7 +1297,7 @@ export default function App() {
                                 : "border-gray-100 hover:border-pink-300 hover:bg-pink-50 shadow-sm"
                             )}
                           >
-                            <span className="inline-block w-10 h-10 rounded-full bg-gray-100 text-center leading-10 mr-4 text-sm flex-shrink-0">
+                            <span className="inline-block w-8 h-8 rounded-full bg-gray-100 text-center leading-8 mr-4 text-sm flex-shrink-0">
                               {String.fromCharCode(65 + i)}
                             </span>
                             <span className="flex-1">{option}</span>
@@ -821,6 +1307,26 @@ export default function App() {
                   </div>
                 </>
               )}
+
+              <div className="flex items-center justify-between pt-6 border-t border-gray-100 mt-auto">
+                <button 
+                  onClick={handleGoHome}
+                  className="text-gray-400 hover:text-pink-600 font-bold flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-pink-50 transition-all text-xs"
+                >
+                  <ChevronLeft className="w-4 h-4" /> Voltar ao Início
+                </button>
+                <button 
+                  onClick={() => {
+                    setFeedback(null);
+                    setAiResponse(null);
+                    setSelectedPathIndex(null);
+                    playEffect(SOUNDS.CLICK);
+                  }}
+                  className="text-gray-400 hover:text-pink-600 font-bold flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-pink-50 transition-all text-xs"
+                >
+                  Tentar Novamente <Repeat className="w-4 h-4" />
+                </button>
+              </div>
 
               {/* Feedback Overlay */}
               {feedback && (
@@ -837,7 +1343,10 @@ export default function App() {
                     <p className="font-bold">{feedback.message}</p>
                     {feedback.isCorrect ? (
                       <button 
-                        onClick={() => selectExercise(currentExercise.category)}
+                        onClick={() => {
+                          playEffect(SOUNDS.CLICK);
+                          handleNextExerciseProgress();
+                        }}
                         className="mt-2 text-sm font-bold flex items-center gap-1 hover:underline"
                       >
                         Próximo Desafio <ChevronRight className="w-4 h-4" />

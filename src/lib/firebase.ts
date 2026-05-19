@@ -1,21 +1,24 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import firebaseConfigImported from '../../firebase-applet-config.json';
 
 const firebaseConfig = {
   ...firebaseConfigImported
 };
 
-// Se firestoreDatabaseId estiver presente na config importada, o initializeFirestore o usará.
-// Caso contrário, ele tentará o '(default)'.
 const app = initializeApp(firebaseConfig);
 
+// Database ID from provisioned config
+const databaseId = (firebaseConfigImported as any).firestoreDatabaseId || '(default)';
+console.log("Firebase: Usando Database ID:", databaseId);
+
 // Initialize Firestore with offline persistence
-// Se houver um firestoreDatabaseId específico, passamos para o initializeFirestore
+// We use initializeFirestore first to set settings, then the databaseId
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-}, firebaseConfigImported.firestoreDatabaseId || '(default)');
+}, databaseId);
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

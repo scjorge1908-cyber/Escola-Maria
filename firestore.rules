@@ -19,11 +19,19 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
     // --- Users Collection ---
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUser(request.resource.data);
-      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming());
 
       function isValidUser(data) {
         return data.keys().hasAll(['name', 'points', 'levels']) &&
@@ -38,14 +46,14 @@ service cloud.firestore {
     // --- Exercises Collection ---
     match /exercises/{exerciseId} {
       allow read: if isSignedIn();
-      // Admin only creation (manual for now)
       allow write: if false; 
     }
 
     // --- Progress Collection ---
     match /progress/{progressId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && existing().userId == request.auth.uid;
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidId(incoming().exerciseId);
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid;
     }
   }
 }
