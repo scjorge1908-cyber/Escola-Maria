@@ -3,7 +3,7 @@ import {
   ArrowUpDown, Circle, Repeat, Plus, Minus, Box, Hash, 
   Trophy, Star, Gift, Book, Home, Youtube, MessageCircle,
   ChevronRight, ChevronLeft, CheckCircle2, XCircle, LogOut, Loader2,
-  Volume2, VolumeX
+  Volume2, VolumeX, Heart
 } from 'lucide-react';
 // Force rebuild check: v1.1.0
 import { motion, AnimatePresence } from 'motion/react';
@@ -27,6 +27,7 @@ import {
 import { auth, db, loginWithGoogle } from './lib/firebase';
 import { cn } from './lib/utils';
 import { VictoryCelebration } from './components/VictoryCelebration';
+import { MomActivitySheet } from './components/MomActivitySheet';
 import { EXERCISES } from './data/exercises';
 import { CATEGORIES, REWARDS, Category, Exercise, UserProfile, Exam, ExamResult } from './types';
 import { playSound, SOUNDS } from './lib/audio';
@@ -78,7 +79,7 @@ export default function App() {
   const [selectedPathIndex, setSelectedPathIndex] = useState<number | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [activeTab, setActiveTab] = useState<'study' | 'exams' | 'profile'>('study');
+  const [activeTab, setActiveTab] = useState<'study' | 'exams' | 'profile' | 'momActivity'>('study');
   const [currentExam, setCurrentExam] = useState<Exam | null>(null);
   const [currentExamQuestionIndex, setCurrentExamQuestionIndex] = useState(0);
   const [examAnswers, setExamAnswers] = useState<{ id: string; correct: boolean }[]>([]);
@@ -695,7 +696,7 @@ export default function App() {
 
       {/* Bottom Navigation */}
       {!currentExercise && !showDidacticIntro && !showSummary && !showReviewList && !showCategoryIntro && (
-        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-pink-100 px-6 py-3 z-50 flex justify-around items-center">
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-pink-100 px-6 py-3 z-50 flex justify-around items-center print:hidden">
           <button 
             onClick={() => setActiveTab('study')}
             className={cn(
@@ -720,6 +721,16 @@ export default function App() {
             <span className="text-[10px] font-bold uppercase">Provas</span>
           </button>
           <button 
+            onClick={() => setActiveTab('momActivity')}
+            className={cn(
+              "flex flex-col items-center gap-1 transition-colors relative",
+              activeTab === 'momActivity' ? "text-pink-600" : "text-gray-400"
+            )}
+          >
+            <Heart className="w-6 h-6 fill-current" />
+            <span className="text-[10px] font-bold uppercase">Folha da Mamãe</span>
+          </button>
+          <button 
             onClick={() => setActiveTab('profile')}
             className={cn(
               "flex flex-col items-center gap-1 transition-colors",
@@ -732,7 +743,7 @@ export default function App() {
         </nav>
       )}
 
-      <header className="bg-white border-b border-pink-100 p-4 sticky top-0 z-10">
+      <header className="bg-white border-b border-pink-100 p-4 sticky top-0 z-10 print:hidden">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-pink-500 rounded-full flex items-center justify-center text-white font-bold text-lg">
@@ -1177,6 +1188,12 @@ export default function App() {
                       )}
                    </div>
                 </div>
+              </section>
+            )}
+
+            {activeTab === 'momActivity' && (
+              <section className="space-y-6">
+                <MomActivitySheet />
               </section>
             )}
           </div>
